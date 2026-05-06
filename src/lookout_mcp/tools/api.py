@@ -10,6 +10,7 @@ import sqlite3
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -66,7 +67,6 @@ MAX_EXPORT_ROWS = 10_000
 MAX_QUERY_ROWS = 1_000
 TOOL_TIMESTAMP = "2026-01-15T09:30:00Z"
 
-FilterOperator = Literal["eq", "neq", "gt", "gte", "lt", "lte", "between", "in", "contains"]
 Aggregation = Literal["sum", "avg", "min", "max", "count", "count_distinct"]
 ExportFormat = Literal["csv", "json"]
 
@@ -105,7 +105,7 @@ class QueryMetric(StrictModel):
 
 class QueryFilter(StrictModel):
     field: str
-    operator: FilterOperator = "eq"
+    operator: str = "eq"
     value: Any = None
     values: list[Any] | None = None
 
@@ -426,6 +426,87 @@ def _filter_payload_to_list(
     return [dict(item) for item in filters]
 
 
+def _filter_values(query_filter: QueryFilter) -> list[Any]:
+    if query_filter.values is not None:
+        return list(query_filter.values)
+    if (
+        query_filter.operator in {"between", "in"}
+        and isinstance(query_filter.value, Sequence)
+        and not isinstance(query_filter.value, str | bytes | bytearray)
+    ):
+        return list(query_filter.value)
+    return [query_filter.value]
+
+
+def _is_valid_filter_value(value: Any, data_type: str) -> bool:
+    if data_type == "string":
+        return isinstance(value, str)
+    if data_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if data_type == "decimal":
+        return isinstance(value, int | float) and not isinstance(value, bool)
+    if data_type == "boolean":
+        return isinstance(value, bool)
+    if data_type == "date":
+        if not isinstance(value, str):
+            return False
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            return False
+        return True
+    if data_type == "datetime":
+        if not isinstance(value, str):
+            return False
+        try:
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return True
+    return False
+
+
+def _validate_filter_value(
+    query_filter: QueryFilter,
+    field: Mapping[str, Any],
+) -> None:
+    data_type = str(field["data_type"])
+    operator = query_filter.operator
+    values = _filter_values(query_filter)
+
+    if operator == "between" and len(values) != 2:
+        raise WorkflowError(
+            "INVALID_FILTER",
+            "Between filters require exactly two values.",
+            {"field": field["name"], "operator": operator, "value_count": len(values)},
+        )
+    if operator == "in" and not values:
+        raise WorkflowError(
+            "INVALID_FILTER",
+            "In filters require at least one value.",
+            {"field": field["name"], "operator": operator},
+        )
+    if operator == "contains" and data_type != "string":
+        raise WorkflowError(
+            "INVALID_FILTER",
+            "Contains filters are only valid for string fields.",
+            {"field": field["name"], "data_type": data_type, "operator": operator},
+        )
+
+    for value in values:
+        if not _is_valid_filter_value(value, data_type):
+            raise WorkflowError(
+                "INVALID_FILTER",
+                "Filter value is not valid for this field type.",
+                {
+                    "field": field["name"],
+                    "data_type": data_type,
+                    "operator": operator,
+                    "value": value,
+                },
+            )
+
+
 def _validate_query_spec(
     spec: StructuredQuerySpec,
     fields: Sequence[Mapping[str, Any]],
@@ -518,6 +599,7 @@ def _validate_query_spec(
                     "allowed_operators": filter_field["allowed_operators"],
                 },
             )
+        _validate_filter_value(query_filter, filter_field)
 
     orderable_names = {field["name"] for field in fields if field["is_sortable"]}
     orderable_names.update({field["label"] for field in fields if field["is_sortable"]})

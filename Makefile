@@ -1,4 +1,4 @@
-.PHONY: install lint format test typecheck migrate seed run smoke ui-install ui-api ui-dev ui-test
+.PHONY: install lint format test test-unit test-integration typecheck migrate seed run smoke ui-install ui-api ui-dev ui-test
 
 PYTHON ?= python3.12
 
@@ -19,7 +19,13 @@ format:
 	.venv/bin/python -m ruff format .
 
 test:
-	.venv/bin/python -m pytest
+	.venv/bin/python -m pytest --cov=lookout_mcp --cov-report=term-missing
+
+test-unit:
+	.venv/bin/python -m pytest -m unit
+
+test-integration:
+	.venv/bin/python -m pytest -m integration
 
 typecheck:
 	.venv/bin/python -m mypy

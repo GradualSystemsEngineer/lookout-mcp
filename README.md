@@ -48,6 +48,8 @@ Run quality checks and the end-to-end smoke flow:
 make lint
 make typecheck
 make test
+make test-unit
+make test-integration
 make smoke
 ```
 
@@ -76,6 +78,19 @@ client. It verifies:
 
 All smoke-generated render and export artifacts are checked to ensure they resolve under
 `LOOKOUT_FS_ROOT`.
+
+## Testing Strategy
+
+The Python suite is split by pytest markers:
+
+- `make test`: run the full suite with coverage reporting for `lookout_mcp`.
+- `make test-unit`: run fast unit tests for ID validation, cursor encode/decode, filter/type
+  validation, query builder behavior, error envelopes, fuzzy ambiguity, and token-safety helpers.
+- `make test-integration`: run temporary SQLite/filesystem integration tests for migration,
+  seeding, list/get tools, queries, comparisons, renders, exports, edge cases, and golden contract
+  outputs.
+
+See `docs/testing.md` for the manual QA checklist and the snapshot/golden coverage.
 
 ## Optional Lookout Explorer UI
 
@@ -170,7 +185,9 @@ source-offline datasource states.
 
 - `make lint`: run Ruff checks.
 - `make format`: format Python files with Ruff.
-- `make test`: run pytest.
+- `make test`: run pytest with coverage reporting.
+- `make test-unit`: run tests marked `unit`.
+- `make test-integration`: run tests marked `integration`.
 - `make typecheck`: run mypy.
 - `make migrate`: apply pending SQLite migrations.
 - `make seed`: migrate and load deterministic seed data.

@@ -405,8 +405,11 @@ List and query tools are bounded by default. Metadata list tools default to smal
 compact items. Query tools return previews inline and require exports for large result sets. Cursor
 pagination uses opaque cursors that encode version, sort key, last seen ID, and a filter hash.
 
-Filters are validated against datasource field metadata, field data types, allowed operators, and
-sortability/filterability flags.
+Filters are validated against datasource field metadata, field data types, allowed operators,
+filterability flags, and value shape. Date and datetime filters must use ISO-formatted strings,
+numeric filters must use JSON numbers, boolean filters must use JSON booleans, `between` filters
+must provide exactly two values, and string-only operators such as `contains` are rejected for
+non-string fields. Sort clauses are validated against sortable fields or metric aliases.
 
 ## AI agent and token strategy
 
@@ -529,13 +532,31 @@ filesystem root.
 
 ## Testing strategy
 
-Tests cover configuration loading, error envelope shape, the local health check, migration
-application, migration tracking, SQLite ID constraints, Pydantic ID validation, deterministic seed
-counts, relationship integrity, datasource status coverage, chart type coverage, allowed operator
-presence, workbook/view relationships, and artifact paths staying under `LOOKOUT_FS_ROOT`.
+Tests are split into `unit` and `integration` pytest markers and are runnable through `make test`,
+`make test-unit`, and `make test-integration`. `make test` reports coverage for the
+`lookout_mcp` package.
 
-Backend/API tests cover pagination, fuzzy matching, query validation, render/export behavior, and
-integration tests for every MCP tool.
+Unit tests cover configuration loading, error envelope shape, ID validation, cursor encode/decode,
+filter validation by field type, query-builder behavior, fuzzy-match ambiguity, page/preview token
+limits, and warning helpers.
+
+Integration tests use temporary SQLite databases and temporary filesystem roots. They cover
+migration application, migration tracking, deterministic seed counts, relationship integrity,
+datasource status coverage, chart type coverage, allowed operator presence, workbook/view
+relationships, artifact paths staying under `LOOKOUT_FS_ROOT`, list/get tools, `query_datasource`,
+`get_view_data`, `compare_periods`, `render_view_image`, `export_view_data`, and
+`export_query_result`.
+
+Edge-case tests assert standard error envelopes for invalid cursors, oversized pages, unknown
+datasource/workbook/view IDs, invalid fields, invalid operators, malformed dates,
+`source_offline`, stale-cache warnings, query timeout and forced-limit failures, unsupported chart
+types, ambiguous search, export write failures, and token-safety behavior that prevents bulk inline
+row dumps.
+
+Golden contract tests lock representative compact list output, `get_datasource` schema, bounded
+query output, and representative error responses while avoiding volatile SQLite timestamps. Manual
+QA is documented in `docs/testing.md`; `make smoke` executes the discovery, inspection, filtered
+view, datasource query, period comparison, render, export, and failure-recovery checklist.
 
 ## Explicit tradeoffs
 
