@@ -1,4 +1,4 @@
-.PHONY: install lint format test typecheck seed run smoke ui-install ui-api ui-dev ui-test
+.PHONY: install lint format test typecheck migrate seed run smoke ui-install ui-api ui-dev ui-test
 
 PYTHON ?= python3.12
 
@@ -23,6 +23,9 @@ test:
 
 typecheck:
 	.venv/bin/python -m mypy
+
+migrate:
+	.venv/bin/python -m lookout_mcp.db migrate
 
 seed:
 	.venv/bin/python -m lookout_mcp.db seed

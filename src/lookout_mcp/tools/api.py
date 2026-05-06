@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import Field, ValidationError, field_validator
 
-from lookout_mcp.config import LookoutConfig, load_config
+from lookout_mcp.config import ConfigError, LookoutConfig, load_config
 from lookout_mcp.db import connect
 from lookout_mcp.errors import error_envelope
 from lookout_mcp.schemas import (
@@ -276,6 +276,22 @@ def _field_lookup_records(fields: Sequence[Mapping[str, Any]]) -> list[dict[str,
     ]
 
 
+def _field_suggestions(value: str, fields: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
+    records = _field_lookup_records(fields)
+    by_id = {str(record["id"]): record for record in records}
+    suggestions = []
+    for candidate in fuzzy_candidates(value, records, kind="field")[:3]:
+        record = by_id[candidate.id]
+        suggestions.append(
+            {
+                "id": candidate.id,
+                "name": str(record["name"]),
+                "label": candidate.label,
+            }
+        )
+    return suggestions
+
+
 def _resolve_datasource(
     connection: sqlite3.Connection,
     value: str,
@@ -355,15 +371,18 @@ def _resolve_field(
 
     match = resolve_fuzzy_match(value, _field_lookup_records(candidates), kind="field")
     if match is None:
-        raise WorkflowError("FIELD_NOT_FOUND", "Field was not found.", {"field": value})
+        raise WorkflowError(
+            "FIELD_NOT_FOUND",
+            "Field was not found.",
+            {"field": value, "suggestions": _field_suggestions(value, candidates)},
+        )
     return next(dict(field) for field in candidates if field["id"] == match.id)
 
 
 def _normalize_filters(filters: list[QueryFilter] | dict[str, Any]) -> list[QueryFilter]:
     if isinstance(filters, dict):
         return [
-            QueryFilter(field=field, operator="eq", value=value)
-            for field, value in filters.items()
+            QueryFilter(field=field, operator="eq", value=value) for field, value in filters.items()
         ]
     return filters
 
@@ -387,8 +406,24 @@ def _resolve_query_field(
     mapped = _field_map(fields)
     field = mapped.get(value.lower())
     if field is None:
-        raise WorkflowError(error_code, "Field is not valid for this datasource.", {"field": value})
+        raise WorkflowError(
+            error_code,
+            "Field is not valid for this datasource.",
+            {"field": value, "suggestions": _field_suggestions(value, fields)},
+        )
     return field
+
+
+def _filter_payload_to_list(
+    filters: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    if filters is None:
+        return []
+    if isinstance(filters, Mapping):
+        return [
+            {"field": field, "operator": "eq", "value": value} for field, value in filters.items()
+        ]
+    return [dict(item) for item in filters]
 
 
 def _validate_query_spec(
@@ -460,9 +495,12 @@ def _validate_query_spec(
             if allow_virtual_filters:
                 continue
             raise WorkflowError(
-                "INVALID_FILTER",
+                "FIELD_NOT_FOUND",
                 "Filter field is not valid for this datasource.",
-                {"field": query_filter.field},
+                {
+                    "field": query_filter.field,
+                    "suggestions": _field_suggestions(query_filter.field, fields),
+                },
             )
         if not filter_field["is_filterable"]:
             raise WorkflowError(
@@ -620,9 +658,7 @@ def _execute_structured_query(
 
     rows = []
     for combo_index, combination in enumerate(combinations):
-        row = {
-            str(field["name"]): combination[index] for index, field in enumerate(group_fields)
-        }
+        row = {str(field["name"]): combination[index] for index, field in enumerate(group_fields)}
         for metric in metrics:
             alias = _metric_alias(metric, fields)
             row[alias] = _hash_int(
@@ -706,6 +742,12 @@ def _run_tool(
             "Input validation failed.",
             {"errors": exc.errors(include_url=False)},
         )
+    except ConfigError as exc:
+        return error_envelope(
+            "CONFIG_MISSING",
+            str(exc),
+            {"missing": exc.missing},
+        )
     except (WorkflowError, TokenLimitError, InvalidCursorError, AmbiguousMatchError) as exc:
         return exc.to_envelope()
     except ValueError as exc:
@@ -754,11 +796,20 @@ def _insert_query_result(
     query_result_id = deterministic_id("run", f"query-result:{natural}")
     connection.execute(
         """
-        INSERT OR REPLACE INTO query_results (
+        INSERT INTO query_results (
             id, datasource_id, view_id, query_spec, row_count, preview_rows,
             status, warnings, executed_at
         )
         VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            datasource_id = excluded.datasource_id,
+            view_id = excluded.view_id,
+            query_spec = excluded.query_spec,
+            row_count = excluded.row_count,
+            preview_rows = excluded.preview_rows,
+            status = excluded.status,
+            warnings = excluded.warnings,
+            executed_at = excluded.executed_at
         """,
         (
             query_result_id,
@@ -1087,17 +1138,21 @@ def _get_view_data(input_data: GetViewDataInput, config: LookoutConfig) -> dict[
     with _EXPENSIVE_GUARD.run("query"), connect(config.db_path) as connection:
         view = _resolve_view(connection, input_data.view)
         datasource = _resolve_datasource(connection, str(view["datasource_id"]))
-        rows = connection.execute(
-            """
-                SELECT *
-                FROM query_results
-                WHERE view_id = ? AND status = 'completed'
-                ORDER BY executed_at DESC, id
-                LIMIT 1
-                """,
-            (view["id"],),
-        ).fetchall()
+        filter_overrides = _filter_payload_to_list(input_data.filter_overrides)
         warnings = warning_for_datasource_status(str(datasource["status"]))
+        if not filter_overrides:
+            rows = connection.execute(
+                """
+                    SELECT *
+                    FROM query_results
+                    WHERE view_id = ? AND status = 'completed'
+                    ORDER BY executed_at DESC, id
+                    LIMIT 1
+                    """,
+                (view["id"],),
+            ).fetchall()
+        else:
+            rows = []
         if rows:
             query_result = _record_from_row(rows[0])
             preview = bound_query_preview(
@@ -1115,7 +1170,13 @@ def _get_view_data(input_data: GetViewDataInput, config: LookoutConfig) -> dict[
                 {"datasource_id": datasource["id"], "view_id": view["id"]},
             )
         fields = _fields_for_datasource(connection, str(datasource["id"]))
-        spec = StructuredQuerySpec.model_validate(view["query_spec"])
+        query_spec = dict(view["query_spec"])
+        if filter_overrides:
+            query_spec["filters"] = [
+                *_filter_payload_to_list(query_spec.get("filters")),
+                *filter_overrides,
+            ]
+        spec = StructuredQuerySpec.model_validate(query_spec)
         query_rows, row_count = _execute_structured_query(
             datasource,
             fields,
@@ -1126,7 +1187,7 @@ def _get_view_data(input_data: GetViewDataInput, config: LookoutConfig) -> dict[
             connection,
             datasource_id=str(datasource["id"]),
             view_id=str(view["id"]),
-            query_spec=view["query_spec"],
+            query_spec=query_spec,
             row_count=row_count,
             rows=query_rows,
             warnings=warnings,
@@ -1232,9 +1293,7 @@ def _compare_periods(input_data: ComparePeriodsInput, config: LookoutConfig) -> 
                     maximum=400_000,
                 )
                 delta = current - comparison_value
-                pct_delta = (
-                    None if comparison_value == 0 else round(delta / comparison_value, 4)
-                )
+                pct_delta = None if comparison_value == 0 else round(delta / comparison_value, 4)
                 row = {
                     str(field["name"]): combination[position]
                     for position, field in enumerate(dimensions)
@@ -1342,9 +1401,7 @@ def _render_artifact(
                 title = str(target["title"])
                 chart_type = None
                 view_rows = [
-                    view
-                    for view in _all_views(connection)
-                    if view["workbook_id"] == target_id
+                    view for view in _all_views(connection) if view["workbook_id"] == target_id
                 ]
                 warnings = [
                     warning

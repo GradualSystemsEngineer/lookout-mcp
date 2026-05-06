@@ -30,19 +30,10 @@ Create a local environment file:
 cp .env.example .env
 ```
 
-Run quality checks:
-
-```bash
-make lint
-make typecheck
-make test
-make smoke
-```
-
 Create or update the local SQLite schema:
 
 ```bash
-python -m lookout_mcp.db migrate
+make migrate
 ```
 
 Load deterministic BI seed data:
@@ -51,11 +42,40 @@ Load deterministic BI seed data:
 make seed
 ```
 
+Run quality checks and the end-to-end smoke flow:
+
+```bash
+make lint
+make typecheck
+make test
+make smoke
+```
+
 Start the MCP server:
 
 ```bash
 make run
 ```
+
+`LOOKOUT_DB_PATH` and `LOOKOUT_FS_ROOT` are required. If either value is missing, CLI commands and
+MCP tools fail with a clear `CONFIG_MISSING` error instead of falling back to hidden defaults. The
+example `.env.example` keeps generated files under `./var`.
+
+## End-to-End Smoke Flow
+
+`make smoke` exercises the complete local workflow without API keys, external services, or an MCP
+client. It verifies:
+
+- discovery: `search_content`, `list_datasources`, `get_datasource`, `get_field_values`
+- workbook inspection: `list_workbooks`, `get_workbook`, `get_view`
+- view data: `get_view_data` with saved filters and with `filter_overrides`
+- query/export: Q1 revenue by region via `query_datasource`, then `export_query_result`
+- comparison: quarter-over-quarter revenue by region via `compare_periods`
+- render/export: `render_view_image` and `export_view_data`
+- failure behavior: `SOURCE_UNAVAILABLE`, `CACHE_STALE`, and `FIELD_NOT_FOUND` with suggestions
+
+All smoke-generated render and export artifacts are checked to ensure they resolve under
+`LOOKOUT_FS_ROOT`.
 
 ## Optional Lookout Explorer UI
 
@@ -152,9 +172,10 @@ source-offline datasource states.
 - `make format`: format Python files with Ruff.
 - `make test`: run pytest.
 - `make typecheck`: run mypy.
+- `make migrate`: apply pending SQLite migrations.
 - `make seed`: migrate and load deterministic seed data.
 - `make run`: start the MCP server.
-- `make smoke`: run a local smoke check without an MCP client.
+- `make smoke`: run the end-to-end local workflow smoke check without an MCP client.
 - `make ui-api`: start the optional dev-only HTTP adapter for Lookout Explorer.
 - `make ui-dev`: start the optional Vite UI.
 - `make ui-test`: run optional UI component/smoke tests.

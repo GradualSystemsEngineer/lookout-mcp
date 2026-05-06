@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from lookout_mcp.config import LookoutConfig, load_config
+from lookout_mcp.config import ConfigError, LookoutConfig, load_config
 from lookout_mcp.seed import SeedRecords, build_seed_records, write_seed_artifacts
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
@@ -325,10 +325,13 @@ def main() -> None:
     parser.add_argument("command", choices=("migrate", "seed"))
     args = parser.parse_args()
 
-    if args.command == "migrate":
-        migrate()
-    else:
-        seed()
+    try:
+        if args.command == "migrate":
+            migrate()
+        else:
+            seed()
+    except ConfigError as exc:
+        raise SystemExit(f"CONFIG_MISSING: {exc}") from exc
 
 
 if __name__ == "__main__":

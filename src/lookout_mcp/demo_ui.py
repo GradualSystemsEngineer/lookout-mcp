@@ -194,26 +194,9 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
     def _view_action(self, view: str, action: str, body: Mapping[str, Any]) -> JsonPayload:
         if action == "data":
             filter_overrides = body.get("filter_overrides") or []
-            if not filter_overrides:
-                return api.get_view_data(
-                    view=view,
-                    preview_limit=_int_or_none(body.get("preview_limit")),
-                    _config=self.server.config,
-                )
-            view_result = api.get_view(view=view, _config=self.server.config)
-            if "error" in view_result:
-                return view_result
-            query_spec = dict(view_result["view"].get("query_spec") or {})
-            filters = query_spec.get("filters") or []
-            if isinstance(filters, dict):
-                filters = [
-                    {"field": field, "operator": "eq", "value": value}
-                    for field, value in filters.items()
-                ]
-            query_spec["filters"] = [*list(filters), *list(filter_overrides)]
-            return api.query_datasource(
-                datasource=str(view_result["view"]["datasource_id"]),
-                query_spec=query_spec,
+            return api.get_view_data(
+                view=view,
+                filter_overrides=filter_overrides,
                 preview_limit=_int_or_none(body.get("preview_limit")),
                 _config=self.server.config,
             )

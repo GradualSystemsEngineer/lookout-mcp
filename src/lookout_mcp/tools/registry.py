@@ -119,6 +119,13 @@ class GetViewInput(StrictModel):
 
 class GetViewDataInput(StrictModel):
     view: str = Field(description="View ID or unambiguous view name/title.")
+    filter_overrides: dict[str, object] | list[dict[str, object]] = Field(
+        default_factory=dict,
+        description=(
+            "Optional filters to add to the saved view query. A dict is treated as "
+            "field=value equality filters; a list may use structured filter objects."
+        ),
+    )
     preview_limit: int | None = Field(
         default=None,
         description=(
@@ -152,8 +159,7 @@ class ComparePeriodsInput(StrictModel):
     preview_limit: int | None = Field(
         default=None,
         description=(
-            f"Defaults to {QUERY_PREVIEW_DEFAULT_ROWS}; "
-            f"maximum {QUERY_PREVIEW_MAX_ROWS}."
+            f"Defaults to {QUERY_PREVIEW_DEFAULT_ROWS}; maximum {QUERY_PREVIEW_MAX_ROWS}."
         ),
     )
 
@@ -261,6 +267,7 @@ COMMON_GET_ERRORS = [
 COMMON_QUERY_ERRORS = [
     "INVALID_INPUT",
     "NOT_FOUND",
+    "FIELD_NOT_FOUND",
     "AMBIGUOUS_MATCH",
     "LIMIT_EXCEEDED",
     "QUERY_TIMEOUT",
@@ -308,8 +315,8 @@ MODEL_VISIBLE_TOOL_DESCRIPTIONS: dict[str, str] = {
         "query specification."
     ),
     "get_view_data": (
-        "Run the saved query for one view and return a bounded row preview. Large results "
-        "must be exported with export_view_data."
+        "Run the saved query for one view, optionally adding filter overrides, and return "
+        "a bounded row preview. Large results must be exported with export_view_data."
     ),
     "query_datasource": (
         "Run a structured query against one datasource and return a bounded row preview "
@@ -481,7 +488,15 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
             ToolExample(
                 description="Preview saved view data.",
                 input={"view": "Q1 Revenue by Region", "preview_limit": 100},
-            )
+            ),
+            ToolExample(
+                description="Preview saved view data with a filter override.",
+                input={
+                    "view": "Q1 Revenue by Region",
+                    "filter_overrides": {"region": "Northeast"},
+                    "preview_limit": 100,
+                },
+            ),
         ],
     ),
     "query_datasource": _definition(

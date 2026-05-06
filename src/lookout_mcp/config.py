@@ -8,6 +8,14 @@ from pathlib import Path
 from pydantic import BaseModel, Field, field_validator
 
 
+class ConfigError(ValueError):
+    """Raised when required local configuration is missing or invalid."""
+
+    def __init__(self, message: str, *, missing: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.missing = missing or []
+
+
 class LookoutConfig(BaseModel):
     """Validated process configuration loaded from environment variables."""
 
@@ -35,8 +43,18 @@ def load_config(environ: dict[str, str] | None = None) -> LookoutConfig:
     """Load Lookout configuration from environment variables."""
 
     source = os.environ if environ is None else environ
+    missing = [
+        key for key in ("LOOKOUT_DB_PATH", "LOOKOUT_FS_ROOT") if not source.get(key, "").strip()
+    ]
+    if missing:
+        joined = ", ".join(missing)
+        raise ConfigError(
+            f"Missing required Lookout configuration: {joined}. "
+            "Create .env from .env.example or set the variables in the environment.",
+            missing=missing,
+        )
     return LookoutConfig(
-        db_path=Path(source.get("LOOKOUT_DB_PATH", "./lookout.sqlite3")),
-        fs_root=Path(source.get("LOOKOUT_FS_ROOT", "./var")),
+        db_path=Path(source["LOOKOUT_DB_PATH"]),
+        fs_root=Path(source["LOOKOUT_FS_ROOT"]),
         log_level=source.get("LOOKOUT_LOG_LEVEL", "INFO"),
     )

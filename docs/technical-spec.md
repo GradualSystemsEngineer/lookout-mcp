@@ -85,7 +85,8 @@ The current MCP tool surface exposes:
 - `get_workbook`: returns one workbook and optional compact views.
 - `list_views`: lists compact view metadata.
 - `get_view`: returns one view, chart config, and optional saved query spec.
-- `get_view_data`: runs or reuses a saved view query and returns a bounded preview.
+- `get_view_data`: runs or reuses a saved view query, optionally adds filter overrides, and returns
+  a bounded preview.
 - `query_datasource`: runs a validated structured query and returns a bounded preview plus
   `query_result_id`.
 - `compare_periods`: compares a measure across two periods with optional dimensions.
@@ -100,7 +101,8 @@ Planned workflows map to tools as follows:
 
 - Discovery: `search_content`, `list_datasources`, `get_datasource`, `get_field_values`
 - Workbook inspection: `list_workbooks`, `get_workbook`, `list_views`, `get_view`
-- View analysis: `get_view`, `get_view_data`, `render_view_image`, `export_view_data`
+- View analysis: `get_view`, `get_view_data` with saved filters or overrides,
+  `render_view_image`, `export_view_data`
 - Ad hoc analysis: `query_datasource`, `compare_periods`, `export_query_result`
 - Dashboard rendering: `render_workbook_image`
 - Failure recovery: standard error envelopes plus warnings for degraded but readable states
@@ -253,6 +255,18 @@ Response:
 {"query_result_id": "run_...", "rows": [{"region": "Northeast", "revenue": 100000}], "row_count": 10, "returned_row_count": 2, "truncated": true, "next_cursor": null, "warnings": [{"code": "RESULT_TRUNCATED", "message": "Inline rows were truncated to the preview limit.", "details": {"row_count": 10, "returned_row_count": 2}}]}
 ```
 
+Request with a filter override:
+
+```json
+{"view": "Q1 Revenue by Region", "filter_overrides": {"region": "Northeast"}, "preview_limit": 2}
+```
+
+Response:
+
+```json
+{"query_result_id": "run_...", "rows": [{"region": "Northeast", "sum_revenue": 443210}], "row_count": 4, "returned_row_count": 2, "truncated": true, "next_cursor": null, "warnings": [{"code": "RESULT_TRUNCATED", "message": "Inline rows were truncated to the preview limit.", "details": {"row_count": 4, "returned_row_count": 2}}]}
+```
+
 ### `query_datasource`
 
 Request:
@@ -342,6 +356,48 @@ Example error:
 ```json
 {"error": {"code": "SOURCE_UNAVAILABLE", "message": "Datasource source is offline; ad hoc queries are unavailable.", "details": {"datasource_id": "ds_...", "status": "source_offline"}}}
 ```
+
+Example invalid field error:
+
+```json
+{"error": {"code": "FIELD_NOT_FOUND", "message": "Field is not valid for this datasource.", "details": {"field": "revenu", "suggestions": [{"id": "fld_...", "name": "revenue", "label": "Revenue"}]}}}
+```
+
+## End-to-end local workflow
+
+A clean checkout can validate Lookout with this command sequence:
+
+```bash
+make install
+cp .env.example .env
+make migrate
+make seed
+make lint
+make typecheck
+make test
+make smoke
+make run
+```
+
+`LOOKOUT_DB_PATH` and `LOOKOUT_FS_ROOT` are required configuration. If either is absent or blank,
+CLI entrypoints fail with `CONFIG_MISSING`, and MCP tools return the standard error envelope with
+`error.code=CONFIG_MISSING`. The checked-in `.env.example` points at `./lookout.sqlite3` and
+`./var`, so all generated files are local and inspectable.
+
+The smoke script is the executable end-to-end example. It exercises:
+
+- discovery through `search_content`, `list_datasources`, `get_datasource`, and
+  `get_field_values`
+- workbook inspection through `list_workbooks`, `get_workbook`, and `get_view`
+- filtered view data through `get_view_data` with saved filters and with `filter_overrides`
+- Q1 revenue by region through `query_datasource`, then `export_query_result`
+- quarter-over-quarter revenue through `compare_periods`
+- artifact creation through `render_view_image` and `export_view_data`
+- failure behavior for `SOURCE_UNAVAILABLE`, stale-cache warnings, and invalid fields with
+  suggestions
+
+Smoke validates every generated artifact path by resolving it relative to `LOOKOUT_FS_ROOT` and
+rejecting any path that escapes the configured root.
 
 ## Pagination and filter semantics
 

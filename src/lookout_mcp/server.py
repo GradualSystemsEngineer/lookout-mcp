@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from lookout_mcp.config import LookoutConfig, load_config
+from lookout_mcp.config import ConfigError, LookoutConfig, load_config
+from lookout_mcp.errors import error_envelope
 from lookout_mcp.schemas import HealthCheckResult
 from lookout_mcp.tools import api
 from lookout_mcp.tools.registry import MODEL_VISIBLE_TOOL_DESCRIPTIONS
@@ -13,7 +14,10 @@ from lookout_mcp.tools.registry import MODEL_VISIBLE_TOOL_DESCRIPTIONS
 def health_check(config: LookoutConfig | None = None) -> dict[str, Any]:
     """Return a local smoke-check payload for tests and MCP clients."""
 
-    loaded = load_config() if config is None else config
+    try:
+        loaded = load_config() if config is None else config
+    except ConfigError as exc:
+        return error_envelope("CONFIG_MISSING", str(exc), {"missing": exc.missing})
     loaded.ensure_filesystem_root()
     return HealthCheckResult(
         status="ok",
@@ -137,8 +141,16 @@ def create_mcp_server() -> Any:
         return api.get_view(view=view, include_query_spec=include_query_spec)
 
     @mcp.tool(name="get_view_data", description=MODEL_VISIBLE_TOOL_DESCRIPTIONS["get_view_data"])
-    def _get_view_data(view: str, preview_limit: int | None = None) -> dict[str, Any]:
-        return api.get_view_data(view=view, preview_limit=preview_limit)
+    def _get_view_data(
+        view: str,
+        filter_overrides: dict[str, object] | list[dict[str, object]] | None = None,
+        preview_limit: int | None = None,
+    ) -> dict[str, Any]:
+        return api.get_view_data(
+            view=view,
+            filter_overrides=filter_overrides or {},
+            preview_limit=preview_limit,
+        )
 
     @mcp.tool(
         name="query_datasource",
@@ -214,6 +226,10 @@ def create_mcp_server() -> Any:
 
 
 def main() -> None:
+    config_status = health_check()
+    if "error" in config_status:
+        error = config_status["error"]
+        raise SystemExit(f"{error['code']}: {error['message']}")
     create_mcp_server().run()
 
 

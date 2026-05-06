@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from lookout_mcp.config import LookoutConfig, load_config
+from lookout_mcp.config import ConfigError, LookoutConfig, load_config
 from lookout_mcp.errors import error_envelope
 from lookout_mcp.server import health_check
 
@@ -38,6 +38,27 @@ def test_load_config_from_environment_values() -> None:
     assert str(config.db_path) == "/tmp/lookout-test.sqlite3"
     assert str(config.fs_root) == "/tmp/lookout-fs"
     assert config.log_level == "DEBUG"
+
+
+@pytest.mark.unit
+def test_load_config_requires_local_paths() -> None:
+    with pytest.raises(ConfigError) as exc_info:
+        load_config({})
+
+    assert exc_info.value.missing == ["LOOKOUT_DB_PATH", "LOOKOUT_FS_ROOT"]
+
+
+@pytest.mark.unit
+def test_health_check_returns_graceful_error_when_config_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LOOKOUT_DB_PATH", raising=False)
+    monkeypatch.delenv("LOOKOUT_FS_ROOT", raising=False)
+
+    result = health_check()
+
+    assert result["error"]["code"] == "CONFIG_MISSING"
+    assert result["error"]["details"]["missing"] == ["LOOKOUT_DB_PATH", "LOOKOUT_FS_ROOT"]
 
 
 @pytest.mark.unit

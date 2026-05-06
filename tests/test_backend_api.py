@@ -76,6 +76,14 @@ def test_query_tools_return_bounded_previews_and_warnings(tmp_path: Path) -> Non
             _config=config,
         )
     )
+    view_data_override = _assert_ok(
+        api.get_view_data(
+            view="Q1 Revenue by Region",
+            filter_overrides={"region": "Northeast"},
+            preview_limit=2,
+            _config=config,
+        )
+    )
     query = _assert_ok(
         api.query_datasource(
             datasource="Retail Sales",
@@ -104,6 +112,7 @@ def test_query_tools_return_bounded_previews_and_warnings(tmp_path: Path) -> Non
     assert stale["warnings"][0]["code"] == "CACHE_STALE"
     assert view_data["returned_row_count"] == 2
     assert view_data["warnings"][0]["code"] == "CACHE_STALE"
+    assert view_data_override["returned_row_count"] == 2
     assert query["returned_row_count"] == 2
     assert query["truncated"] is True
     assert query["warnings"][0]["code"] == "RESULT_TRUNCATED"
@@ -119,7 +128,7 @@ def test_tool_errors_use_standard_envelope(tmp_path: Path) -> None:
     too_large_page = api.list_datasources(page_size=26, _config=config)
     bad_filter = api.query_datasource(
         datasource="Retail Sales",
-        query_spec={"filters": [{"field": "missing", "operator": "eq", "value": "x"}]},
+        query_spec={"filters": [{"field": "revenu", "operator": "eq", "value": "x"}]},
         _config=config,
     )
     source_offline = api.query_datasource(
@@ -139,10 +148,24 @@ def test_tool_errors_use_standard_envelope(tmp_path: Path) -> None:
     )
 
     assert too_large_page["error"]["code"] == "PAGE_SIZE_TOO_LARGE"
-    assert bad_filter["error"]["code"] == "INVALID_FILTER"
+    assert bad_filter["error"]["code"] == "FIELD_NOT_FOUND"
+    assert bad_filter["error"]["details"]["suggestions"]
     assert source_offline["error"]["code"] == "SOURCE_UNAVAILABLE"
     assert limit["error"]["code"] == "LIMIT_EXCEEDED"
     assert timeout["error"]["code"] == "QUERY_TIMEOUT"
+
+
+@pytest.mark.integration
+def test_tool_returns_config_error_when_required_environment_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LOOKOUT_DB_PATH", raising=False)
+    monkeypatch.delenv("LOOKOUT_FS_ROOT", raising=False)
+
+    result = api.list_datasources()
+
+    assert result["error"]["code"] == "CONFIG_MISSING"
+    assert result["error"]["details"]["missing"] == ["LOOKOUT_DB_PATH", "LOOKOUT_FS_ROOT"]
 
 
 @pytest.mark.integration
@@ -170,6 +193,13 @@ def test_render_and_export_tools_create_files_under_filesystem_root(tmp_path: Pa
     export_query = _assert_ok(
         api.export_query_result(query_result_id=query["query_result_id"], _config=config)
     )
+    repeat_query = _assert_ok(
+        api.query_datasource(
+            datasource="Retail Sales",
+            query_spec={"group_by": ["region"], "metrics": [{"field": "revenue"}]},
+            _config=config,
+        )
+    )
     export_view = _assert_ok(
         api.export_view_data(view="Q1 Revenue by Region", format="json", _config=config)
     )
@@ -182,4 +212,5 @@ def test_render_and_export_tools_create_files_under_filesystem_root(tmp_path: Pa
     assert render_view["status"] == "ready"
     assert render_workbook["status"] == "ready"
     assert export_query["status"] == "ready"
+    assert repeat_query["query_result_id"] == query["query_result_id"]
     assert export_view["format"] == "json"
