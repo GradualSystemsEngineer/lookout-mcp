@@ -35,6 +35,19 @@ MCP transport registration lives in `server.py`. Tool descriptions and Pydantic 
 models live in `tools/registry.py`. Callable backend behavior lives in `tools/api.py`, with shared
 pagination, fuzzy matching, warnings, cursor, and token-limit helpers in `tools/workflow.py`.
 
+## Frontend Boundary
+
+The assignment is evaluated through the MCP contract, so no frontend is required. The optional
+Lookout Explorer UI is a dev-only inspection aid for human evaluators. It reuses the same Python
+backend functions through a small local HTTP adapter and is intentionally excluded from the core MCP
+contract.
+
+## No Embedded LLM Calls
+
+Lookout does not call an LLM because the LLM is the external MCP client. Keeping the server
+LLM-free avoids API keys, network dependencies, cost, nondeterminism, and unclear ownership of
+reasoning. The server's job is to provide deterministic, compact, model-visible tool results.
+
 ## Token and Cost Strategy
 
 Lookout never calls an LLM. It assumes the external MCP client is an agent and keeps responses
@@ -53,7 +66,7 @@ row counts, and error code, but never include preview rows or exported row data.
 All model-visible failures use the standard envelope:
 
 ```json
-{"error": {"code": "...", "message": "...", "details": {}}}
+{"error": {"code": "FIELD_NOT_FOUND", "message": "Field was not found.", "details": {"field": "revenu"}}}
 ```
 
 Validation errors include Pydantic details. Lookup and field errors include candidate suggestions
@@ -63,6 +76,10 @@ configuration failures are explicit and actionable for an AI agent.
 Raw SQL is not enabled in the reference implementation. Structured query specs are required; SQL
 payloads return `UNSUPPORTED_SQL` with a recovery hint. Artifact paths are generated from stable
 Lookout IDs and resolved under `LOOKOUT_FS_ROOT`; path escapes are rejected.
+
+Query safety is enforced through structured specs, datasource field validation, field type and
+operator checks, sortable/filterable flags, preview limits, source status checks, disabled raw SQL,
+and filesystem path containment for artifacts.
 
 ## Testing Strategy
 
@@ -82,3 +99,7 @@ becoming a complete BI product. SQLite and filesystem artifacts are less realist
 warehouse plus object storage, but they are easier to inspect and safer for an offline take-home.
 Auth, multi-tenancy, realtime updates, write-through integrations, and real Tableau connectivity
 are intentionally out of scope.
+
+Deferred work that would make sense after the assignment includes read-only SQL compatibility,
+real warehouse/Tableau adapters, production artifact storage, richer cache lifecycle management,
+auth/permissions, and additional chart/image formats.

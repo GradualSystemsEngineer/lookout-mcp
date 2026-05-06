@@ -55,3 +55,26 @@ After `make seed`, use `make smoke` as the primary manual QA checklist. It verif
 - data export with `export_view_data` and `export_query_result`
 - failure recovery for source-offline data, stale-cache warnings, invalid fields, and safe artifact
   paths under `LOOKOUT_FS_ROOT`
+
+## Final Submission Checklist
+
+Before submission, run:
+
+```bash
+make lint
+make typecheck
+make test
+make smoke
+```
+
+Then confirm:
+
+- Fresh checkout setup is documented with `make install`, `.env.example`, `make migrate`, and
+  `make seed`.
+- DB migration succeeds.
+- Seed succeeds and creates deterministic data.
+- MCP server starts with `make run`.
+- Render and export files are created under `LOOKOUT_FS_ROOT`.
+- Failure modes are deterministic and use the standard error envelope.
+- No external services or API keys are required.
+- `docs/technical-spec.md`, README, and implementation behavior agree.
