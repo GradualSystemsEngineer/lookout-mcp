@@ -117,6 +117,59 @@ and a filter hash.
 Filters will be validated against datasource field metadata, field data types, allowed operators,
 and sortability/filterability flags.
 
+## AI agent and token strategy
+
+Lookout is agent-facing but not agentic: it never calls an LLM, never requires API keys, and never
+delegates reasoning to an external model. The LLM is the MCP client. The server therefore optimizes
+for model-visible tool descriptions, compact responses, deterministic ambiguity handling, and
+recoverable errors.
+
+All planned MCP tools are described in a local tool registry. Each registry entry records the tool
+name, exact model-visible description, input model, output model, common error codes,
+documentation notes, and examples. The registry covers:
+
+- `search_content`
+- `list_datasources`
+- `get_datasource`
+- `get_field_values`
+- `list_workbooks`
+- `get_workbook`
+- `list_views`
+- `get_view`
+- `get_view_data`
+- `query_datasource`
+- `compare_periods`
+- `render_view_image`
+- `render_workbook_image`
+- `export_view_data`
+- `export_query_result`
+
+Token controls are part of the public workflow contract:
+
+- Metadata list tools default to `page_size=10` and reject page sizes above `25`.
+- Query and view-data tools default to `preview_limit=100` rows and reject inline previews above
+  `1,000` rows.
+- List outputs return compact item shapes and include `row_count`, `returned_row_count`,
+  `truncated`, and `next_cursor`.
+- Query outputs return bounded preview rows and include `row_count`, `returned_row_count`,
+  `truncated`, `next_cursor`, and warnings.
+- Large result access goes through `export_view_data` or `export_query_result`, which write files
+  under `LOOKOUT_FS_ROOT` and return artifact metadata rather than row dumps.
+
+Cursors are opaque base64url-encoded JSON payloads containing a cursor version, sort key, last seen
+ID, and filter hash. Decoding rejects malformed, unsupported-version, sort-mismatched, or
+filter-mismatched cursors with `INVALID_CURSOR`.
+
+Fuzzy matching is deterministic across IDs, names, titles, descriptions, tags, and field names.
+When a lookup expects a single target and multiple candidates tie, Lookout returns
+`AMBIGUOUS_MATCH` with candidate IDs instead of silently choosing one.
+
+Common warnings are structured and model-visible:
+
+- `CACHE_STALE`: data is served from a stale simulated cache.
+- `RESULT_TRUNCATED`: inline rows were truncated to the preview limit.
+- `SOURCE_DEGRADED`: source data is offline or degraded, so cached metadata/results are used.
+
 ## Assumptions
 
 - The evaluator can run Python 3.12 locally.
