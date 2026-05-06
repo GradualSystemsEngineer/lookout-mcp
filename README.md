@@ -150,6 +150,10 @@ SQLite tables:
 Stable IDs use typed prefixes such as `ds_<12 hex>`, `fld_<12 hex>`, `wb_<12 hex>`,
 `view_<12 hex>`, `run_<12 hex>`, `exp_<12 hex>`, and `rnd_<12 hex>`.
 
+The deterministic seed data loads 6 datasources, 48 fields, 36 workbooks, and 180 views. Each
+workbook contains five chart views, keeping the mock within the assessment's target dashboard
+scale while remaining quick to regenerate locally.
+
 ## Token and Cost Strategy
 
 Lookout never calls an LLM, so there is no internal model cost. It is still designed for cheap

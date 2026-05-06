@@ -19,9 +19,9 @@ Source materials reviewed:
 - `tests/**`
 - `scripts/smoke.py`
 
-Overall assessment: nearly ready before this pass, ready after the fixes below. The repository now
-clearly presents `docs/technical-spec.md` as the primary deliverable, keeps the implementation
-secondary, and proves the MCP contract with deterministic local tests.
+Overall assessment: ready after this pass. The repository clearly presents
+`docs/technical-spec.md` as the primary deliverable, keeps the implementation secondary, and proves
+the MCP contract with deterministic local tests.
 
 ## Compliance Matrix
 
@@ -47,7 +47,7 @@ secondary, and proves the MCP contract with deterministic local tests.
 | 18. Implementation notes explain SQL and filesystem interactions. | PDF Page 8 says each tool receives DB/FS and should describe what it touches. | Met | Tool SQL and Filesystem Interactions table. | Previous docs were too high level. | Add per-tool-area SQL/FS table. | Yes |
 | 19. Export behavior is described. | PDF Page 8 and W8. | Met | Export tool docs, Query Safety, Tool SQL/Filesystem Interactions. | CSV header order was not protected in code. | Preserve first-row/model header order and test it. | Yes |
 | 20. Open questions have reasoned positions. | PDF Page 12 asks about read-only failure modes. | Met | Open Questions and Positions; Position on Read-only Failure Modes. | Heading was less explicit. | Add explicit open-question section. | Yes |
-| 21. Seed strategy is realistic. | PDF Page 12 target scale; product brief examples. | Met | Seed Data Strategy; `seed.py` creates 6 datasources, 36 workbooks, 60 views. | None. | None. | No |
+| 21. Seed strategy is realistic. | PDF Page 12 target scale; product brief examples. | Met | Seed Data Strategy; `seed.py` creates 6 datasources, 36 workbooks, and 180 views, with five chart views per workbook. | Earlier seed shape had 36 workbooks but only 60 total views. | Expand focused analysis workbooks so every workbook sits within the brief's 4-12 chart range. | Yes |
 | 22. Testing strategy explains what and why. | PDF Page 7. | Met | `docs/testing.md`, Testing Strategy in spec, pytest markers. | None. | None. | No |
 | 23. Explicit tradeoffs are documented. | PDF Page 7. | Met | Explicit Tradeoffs and Intentionally Deferred Work. | None. | None. | No |
 | 24. Offline operation is preserved. | PDF Page 7 technical context. | Met | No runtime external calls; README states no network/API keys; tests use temp DB/FS. | None. | None. | No |
@@ -87,6 +87,7 @@ secondary, and proves the MCP contract with deterministic local tests.
 | 58. Smoke test exists or manual verification steps exist. | Integration requirement. | Met | `scripts/smoke.py`, `make smoke`, `docs/testing.md`. | Smoke did not cover render filters. | Add filtered render call. | Yes |
 | 59. Implementation aligns with documentation. | Submission coherence. | Met | Registry/docs/code cross-check; updated specs for new contract details. | Render filters and summaries needed alignment. | Update code, tests, README, spec. | Yes |
 | 60. Submission is coherent and interview-ready. | Evaluation favors judgment over volume. | Met | Spec-first framing, engineering decisions, tradeoffs, final checklist. | Main residual risk is synthetic behavior scope, now clearly documented. | Keep limitations explicit. | Yes |
+| 61. Seeded dashboards match target chart density. | PDF Page 12 scale says 30-80 dashboards, each with 4-12 charts. | Met | Tests assert every workbook has between 4 and 12 views; seed currently creates 36 workbooks with 5 views each. | Previous seed data had focused one-view analysis workbooks. | Populate supporting context views in every focused analysis workbook. | Yes |
 
 ## Findings Fixed in This Pass
 
@@ -99,6 +100,8 @@ secondary, and proves the MCP contract with deterministic local tests.
 - Changed CSV export headers to preserve first-row/model order instead of sorting field names.
 - Made W1-W8 explicit in the workflow mapping.
 - Added an explicit open-question position section and a SQL/filesystem interaction map.
+- Expanded seed data from 60 to 180 views so all 36 seeded workbooks contain five chart views,
+  matching the target dashboard/chart-density range.
 
 ## Residual Risks and Limitations
 
@@ -124,14 +127,15 @@ Commands run so far:
 | `tesseract docs/Page*.png stdout --psm 6` | Passed | OCR confirmed assignment requirements. |
 | `.venv/bin/python -m pytest tests/test_backend_api.py tests/test_contract_edges.py -q` | Passed | 24 targeted backend/edge tests passed after fixes. |
 | Registry introspection script | Passed | 15 core tools, descriptions present, notes/examples present. |
-| Seed-count introspection script | Passed | 6 datasources, 48 fields, 36 workbooks, 60 views; all 5 chart types covered. |
+| Seed-count introspection script | Passed | 6 datasources, 48 fields, 36 workbooks, 180 views, 5 views per workbook, all 5 chart types covered. |
 | `make lint` | Passed | Ruff reported all checks passed. |
 | `make typecheck` | Failed, then passed | Initial failure was a mypy-only type mismatch in the new render-filter helper; fixed by converting override payloads to `QueryFilter` models. Final run: no issues in 19 source files. |
 | `make test` | Passed | 53 tests passed; coverage reported 82% overall. |
 | `make smoke` | Passed | Exercised discovery, workbook/view inspection, filtered view data, structured query, export, compare, filtered render, source-offline error, stale-cache warning, and field suggestions. |
-| `make lint && make typecheck` final rerun | Passed | Ruff and mypy passed after registry error-mode cleanup. |
-| `make test` final rerun | Passed | 53 tests passed after registry error-mode cleanup. |
-| `make smoke` final rerun | Passed | Filtered render and export workflows still pass after registry error-mode cleanup. |
+| `make lint` final rerun | Passed | Ruff reported all checks passed after the seed-density change. |
+| `make typecheck` final rerun | Passed | Mypy reported no issues in 19 source files after the seed-density change. |
+| `make test` final rerun | Passed | 53 tests passed after the seed-density change. |
+| `make smoke` final rerun | Passed | Filtered render, export, stale-cache, source-offline, and field-suggestion workflows pass after the seed-density change. |
 
 Final verification commands for a local evaluator:
 

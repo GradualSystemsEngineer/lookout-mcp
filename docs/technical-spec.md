@@ -257,7 +257,7 @@ Example:
 Success:
 
 ```json
-{"items": [{"id": "view_7ed2cb9bdb45", "kind": "view", "label": "Dashboard: Monthly Revenue Trend", "score": 325}, {"id": "view_e17b7f8655b7", "kind": "view", "label": "Dashboard: Q1 Revenue by Region", "score": 325}], "row_count": 44, "returned_row_count": 2, "truncated": true, "next_cursor": "eyJmaWx0ZXJfaGFzaCI6IjYwNzM3ZDdlNTk3Mjc4YjMiLCJsYXN0X2lkIjoidmlld19lMTdiN2Y4NjU1YjciLCJzb3J0X2tleSI6InNlYXJjaF9zY29yZSIsInZlcnNpb24iOjF9", "warnings": []}
+{"items": [{"id": "view_7ed2cb9bdb45", "kind": "view", "label": "Dashboard: Monthly Revenue Trend", "score": 325, "matched_fields": ["name", "title", "description"]}, {"id": "view_e17b7f8655b7", "kind": "view", "label": "Dashboard: Q1 Revenue by Region", "score": 325, "matched_fields": ["name", "title", "description"]}], "row_count": 89, "returned_row_count": 2, "truncated": true, "next_cursor": "eyJmaWx0ZXJfaGFzaCI6IjYwNzM3ZDdlNTk3Mjc4YjMiLCJsYXN0X2lkIjoidmlld19lMTdiN2Y4NjU1YjciLCJzb3J0X2tleSI6InNlYXJjaF9zY29yZSIsInZlcnNpb24iOjF9", "warnings": []}
 ```
 
 ### `list_datasources`
@@ -452,13 +452,13 @@ Common errors: `PAGE_SIZE_TOO_LARGE`, `INVALID_CURSOR`, `AMBIGUOUS_MATCH`,
 Example:
 
 ```json
-{"datasource": "Retail Sales", "chart_type": "bar"}
+{"datasource": "Retail Sales", "chart_type": "bar", "page_size": 2}
 ```
 
 Success:
 
 ```json
-{"items": [{"id": "view_e17b7f8655b7", "title": "Dashboard: Q1 Revenue by Region", "workbook_id": "wb_22c5ed3575e6", "datasource_id": "ds_fc7964798790", "chart_type": "bar", "position": 1}, {"id": "view_cd948d133126", "title": "Q1 Revenue by Region", "workbook_id": "wb_5d5ec96d1237", "datasource_id": "ds_fc7964798790", "chart_type": "bar", "position": 1}], "row_count": 2, "returned_row_count": 2, "truncated": false, "next_cursor": null, "warnings": []}
+{"items": [{"id": "view_80a986a56ae6", "title": "Category Revenue Treemap Context: Q1 Revenue by Region", "workbook_id": "wb_db7f24d543c8", "datasource_id": "ds_fc7964798790", "chart_type": "bar", "position": 1}, {"id": "view_e17b7f8655b7", "title": "Dashboard: Q1 Revenue by Region", "workbook_id": "wb_22c5ed3575e6", "datasource_id": "ds_fc7964798790", "chart_type": "bar", "position": 1}], "row_count": 6, "returned_row_count": 2, "truncated": true, "next_cursor": "eyJmaWx0ZXJfaGFzaCI6IjRhMDc0MmFlZGQ0YWUzZTQiLCJsYXN0X2lkIjoidmlld19lMTdiN2Y4NjU1YjciLCJzb3J0X2tleSI6InRpdGxlIiwidmVyc2lvbiI6MX0", "warnings": []}
 ```
 
 ### `get_view`
@@ -924,8 +924,14 @@ The seed generator creates:
 - 6 datasources
 - 48 datasource fields
 - 36 workbooks
-- 60 views
+- 180 views
 - Seeded query results, exports, and renders for representative workflows
+
+Each seeded workbook contains five views, so the catalog sits within the brief's target shape of
+30 to 80 dashboards with 4 to 12 charts each while remaining small enough for deterministic local
+tests. Focused analysis workbooks keep one primary view title unprefixed for clean lookup and add
+supporting context views with prefixed titles; executive dashboards contain the same five
+datasource views with dashboard-specific titles.
 
 Seeded workflows include revenue by region, store growth, sales pipeline health, marketing spend,
 support backlog, inventory supply chain, executive dashboards, stale-cache warnings, and

@@ -73,6 +73,7 @@ Then confirm:
   `make seed`.
 - DB migration succeeds.
 - Seed succeeds and creates deterministic data.
+- Seeded workbooks stay within the target dashboard density: every workbook has 4 to 12 views.
 - MCP server starts with `make run`.
 - Render and export files are created under `LOOKOUT_FS_ROOT`.
 - Failure modes are deterministic and use the standard error envelope.
