@@ -22,23 +22,46 @@ Lookout itself never calls an LLM; the LLM is the external agent invoking MCP to
 
 ## Data model and schema
 
-Bootstrap phase only defines the package and configuration foundation. The planned persistent
-entities are:
+SQLite is the durable state store. Schema changes are applied from ordered SQL files in
+`migrations/` by `python -m lookout_mcp.db migrate`. Applied versions are tracked in
+`_lookout_migrations`.
 
-- `datasources`
-- `datasource_fields`
-- `workbooks`
-- `views`
-- `query_results`
-- `exports`
-- `renders`
+The core domain tables are:
 
-Detailed table definitions, constraints, indexes, and migration strategy will be added in the
-domain/data-model phase.
+- `datasources`: datasource metadata, simulated status, row counts, tags, and default filters.
+  Status is constrained to `available`, `cache_stale`, or `source_offline`.
+- `datasource_fields`: fields owned by a datasource. Each field stores name, label, data type,
+  semantic role, description, optional default aggregation, filter/sort flags, allowed operators,
+  and ordinal position.
+- `workbooks`: workbook metadata, project/owner, tags, and default filters.
+- `views`: workbook views linked to one workbook and one datasource. Views store chart type,
+  chart config, query spec, default filters, visual config, and workbook position.
+- `query_results`: deterministic run metadata linked to a datasource and optionally a view. Query
+  specs, preview rows, warnings, and status are JSON-backed or constrained fields.
+- `exports`: export artifact metadata linked to a query result or view, with format, row count,
+  status, metadata, and a path relative to `LOOKOUT_FS_ROOT`.
+- `renders`: render artifact metadata linked to a workbook or view, with dimensions, status,
+  warnings, visual config, and a path relative to `LOOKOUT_FS_ROOT`.
+
+Foreign keys are enabled for Lookout connections. The schema uses `CHECK` constraints for ID
+prefixes, enum-like statuses, chart types, data types, semantic roles, artifact statuses, positive
+counts/dimensions, and JSON validity. JSON columns are used for tags, default filters, allowed
+operators, chart config, query specs, preview rows, warnings, metadata, and visual config where
+normalization would add noise without improving the mock contract.
+
+Indexes cover common discovery and filtering paths:
+
+- datasource status/theme and label
+- datasource fields by datasource, filterability, sortability, data type, and semantic role
+- workbooks by project/title
+- views by workbook position, datasource/chart type, and title
+- query results by datasource/execution time and view
+- exports/renders by their linked query result, view, or workbook
 
 ## ID formats
 
-Planned IDs are stable string identifiers with type prefixes:
+IDs are stable string identifiers generated from deterministic seed natural keys. The Python
+validation helpers and SQLite `CHECK` constraints enforce:
 
 - Datasource: `ds_<12 lowercase hex>`
 - Field: `fld_<12 lowercase hex>`
@@ -50,12 +73,12 @@ Planned IDs are stable string identifiers with type prefixes:
 
 ## Tool surface
 
-Bootstrap exposes:
+The current MCP tool surface exposes:
 
 - `health_check`: returns local service status, configured SQLite path, filesystem root, and log
   level.
 
-Planned MCP tools:
+Planned MCP tools for later phases:
 
 - `search_content`
 - `list_datasources`
@@ -118,15 +141,46 @@ and sortability/filterability flags.
 
 ## Seed data strategy
 
-Later phases will add deterministic seed data for retail sales, store performance, sales pipeline,
-marketing spend, customer support, and inventory or supply chain. Seed data will cover available,
-stale-cache, and source-offline datasource states.
+`python -m lookout_mcp.db seed` migrates the configured database, clears the core domain tables,
+and reloads deterministic records. Seed IDs are generated as the first 12 lowercase hex characters
+of a SHA-256 digest over stable natural keys, prefixed by entity type. Rerunning seed produces the
+same IDs and row counts.
+
+The seed contains six datasource themes:
+
+- retail sales (`available`)
+- store performance (`cache_stale`)
+- sales pipeline (`available`)
+- marketing spend (`source_offline`)
+- customer support (`available`)
+- inventory supply chain (`cache_stale`)
+
+Each datasource has eight fields with labels, descriptions, data types, semantic roles, default
+aggregations where relevant, filter/sort flags, and allowed operators derived from data type. The
+generator creates 36 workbooks and 60 views: five focused analysis workbooks per datasource plus
+one executive dashboard workbook per datasource. Seeded chart types include `bar`, `pie`,
+`treemap`, `line`, and `histogram`.
+
+Seeded query/export/render metadata demonstrates target workflows:
+
+- compare Q1 revenue across regions
+- pull top stores by same-store sales growth last month
+- render executive dashboards
+- export raw rows behind a sales pipeline health chart
+
+Small placeholder export and render artifacts are written under `LOOKOUT_FS_ROOT/exports` and
+`LOOKOUT_FS_ROOT/renders` to keep metadata paths inspectable and constrained to the configured
+filesystem root.
 
 ## Testing strategy
 
-Bootstrap tests cover configuration loading, error envelope shape, and the local health check.
-Later phases will add migration, seed integrity, pagination, fuzzy matching, query validation,
-render/export, and integration tests for every MCP tool.
+Tests cover configuration loading, error envelope shape, the local health check, migration
+application, migration tracking, SQLite ID constraints, Pydantic ID validation, deterministic seed
+counts, relationship integrity, datasource status coverage, chart type coverage, allowed operator
+presence, workbook/view relationships, and artifact paths staying under `LOOKOUT_FS_ROOT`.
+
+Later phases will add pagination, fuzzy matching, query validation, render/export behavior, and
+integration tests for every MCP tool as those tool contracts are implemented.
 
 ## Explicit tradeoffs
 
@@ -134,4 +188,3 @@ render/export, and integration tests for every MCP tool.
 - Local SQLite keeps setup simple and deterministic at the cost of distributed-system realism.
 - Filesystem render/export artifacts are easier to inspect than object storage mocks.
 - Auth, multi-tenancy, realtime updates, and external write-through are intentionally deferred.
-

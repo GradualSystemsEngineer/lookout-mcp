@@ -39,7 +39,13 @@ make test
 make smoke
 ```
 
-Run the placeholder seed command:
+Create or update the local SQLite schema:
+
+```bash
+python -m lookout_mcp.db migrate
+```
+
+Load deterministic BI seed data:
 
 ```bash
 make seed
@@ -57,15 +63,33 @@ The bootstrap phase exposes a single `health_check` tool. Later phases will add 
 agent-facing BI workflow: content discovery, datasource inspection, workbook/view access, bounded
 queries, period comparison, deterministic renders, and exports.
 
+## Current Data Model
+
+The reference implementation includes SQLite migrations and deterministic seed data for the core
+Lookout domain entities:
+
+- `datasources`
+- `datasource_fields`
+- `workbooks`
+- `views`
+- `query_results`
+- `exports`
+- `renders`
+
+Run `python -m lookout_mcp.db migrate` for a clean schema and `python -m lookout_mcp.db seed` to
+reload deterministic BI scenarios. The seed covers retail sales, store performance, sales pipeline,
+marketing spend, customer support, and inventory supply chain, including available, stale-cache, and
+source-offline datasource states.
+
 ## Repository Layout
 
 - `docs/technical-spec.md`: primary assignment artifact.
 - `docs/engineering-decisions.md`: rationale behind architecture and implementation choices.
 - `src/lookout_mcp/`: Python package for the reference MCP server.
-- `migrations/`: future SQLite migration files.
+- `migrations/`: ordered SQLite migration files.
 - `scripts/`: local utility scripts.
 - `tests/`: pytest suite.
-- `data/`: deterministic seed data inputs in later phases.
+- `data/`: optional deterministic seed data inputs in later phases.
 - `var/`: local generated files, ignored except for directory placeholders.
 
 ## Development Commands
@@ -74,7 +98,6 @@ queries, period comparison, deterministic renders, and exports.
 - `make format`: format Python files with Ruff.
 - `make test`: run pytest.
 - `make typecheck`: run mypy.
-- `make seed`: run the bootstrap seed command.
+- `make seed`: migrate and load deterministic seed data.
 - `make run`: start the MCP server.
 - `make smoke`: run a local smoke check without an MCP client.
-
