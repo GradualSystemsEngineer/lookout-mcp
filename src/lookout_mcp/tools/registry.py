@@ -1,4 +1,4 @@
-"""Model-visible tool registry for the planned Lookout MCP surface."""
+"""Model-visible tool registry for the Lookout MCP surface."""
 
 from __future__ import annotations
 
@@ -250,7 +250,7 @@ class ExportArtifactOutput(StrictModel):
 
 
 COMMON_DISCOVERY_ERRORS = [
-    "INVALID_PAGE_SIZE",
+    "PAGE_SIZE_TOO_LARGE",
     "INVALID_CURSOR",
     "AMBIGUOUS_MATCH",
 ]
@@ -262,14 +262,17 @@ COMMON_QUERY_ERRORS = [
     "INVALID_INPUT",
     "NOT_FOUND",
     "AMBIGUOUS_MATCH",
-    "QUERY_PREVIEW_LIMIT_EXCEEDED",
-    "SOURCE_DEGRADED",
+    "LIMIT_EXCEEDED",
+    "QUERY_TIMEOUT",
+    "SOURCE_UNAVAILABLE",
 ]
 COMMON_ARTIFACT_ERRORS = [
     "INVALID_INPUT",
     "NOT_FOUND",
     "AMBIGUOUS_MATCH",
-    "ARTIFACT_WRITE_FAILED",
+    "EXPORT_FAILED",
+    "RENDER_FAILED",
+    "RATE_LIMITED",
 ]
 
 MODEL_VISIBLE_TOOL_DESCRIPTIONS: dict[str, str] = {

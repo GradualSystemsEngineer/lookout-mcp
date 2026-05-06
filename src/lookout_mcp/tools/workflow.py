@@ -126,7 +126,7 @@ def normalize_list_page_size(page_size: int | None) -> int:
         return LIST_DEFAULT_PAGE_SIZE
     if page_size < 1 or page_size > LIST_MAX_PAGE_SIZE:
         raise TokenLimitError(
-            "INVALID_PAGE_SIZE",
+            "PAGE_SIZE_TOO_LARGE",
             f"page_size must be between 1 and {LIST_MAX_PAGE_SIZE}.",
             {
                 "default": LIST_DEFAULT_PAGE_SIZE,
@@ -144,7 +144,7 @@ def normalize_query_preview_limit(limit: int | None) -> int:
         return QUERY_PREVIEW_DEFAULT_ROWS
     if limit < 1 or limit > QUERY_PREVIEW_MAX_ROWS:
         raise TokenLimitError(
-            "QUERY_PREVIEW_LIMIT_EXCEEDED",
+            "LIMIT_EXCEEDED",
             f"preview_limit must be between 1 and {QUERY_PREVIEW_MAX_ROWS}.",
             {
                 "default": QUERY_PREVIEW_DEFAULT_ROWS,

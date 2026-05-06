@@ -67,7 +67,7 @@ def test_list_page_size_defaults_and_rejects_over_limit() -> None:
     with pytest.raises(TokenLimitError) as exc_info:
         normalize_list_page_size(LIST_MAX_PAGE_SIZE + 1)
 
-    assert exc_info.value.to_envelope()["error"]["code"] == "INVALID_PAGE_SIZE"
+    assert exc_info.value.to_envelope()["error"]["code"] == "PAGE_SIZE_TOO_LARGE"
     assert exc_info.value.details["max"] == LIST_MAX_PAGE_SIZE
 
 
@@ -80,7 +80,7 @@ def test_query_preview_defaults_and_rejects_over_limit() -> None:
         normalize_query_preview_limit(QUERY_PREVIEW_MAX_ROWS + 1)
 
     envelope = exc_info.value.to_envelope()
-    assert envelope["error"]["code"] == "QUERY_PREVIEW_LIMIT_EXCEEDED"
+    assert envelope["error"]["code"] == "LIMIT_EXCEEDED"
     assert (
         envelope["error"]["details"]["recovery_hint"]
         == "Use an export tool for larger result sets."

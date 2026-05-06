@@ -77,24 +77,22 @@ The current MCP tool surface exposes:
 
 - `health_check`: returns local service status, configured SQLite path, filesystem root, and log
   level.
-
-Planned MCP tools for later phases:
-
-- `search_content`
-- `list_datasources`
-- `get_datasource`
-- `get_field_values`
-- `list_workbooks`
-- `get_workbook`
-- `list_views`
-- `get_view`
-- `get_view_data`
-- `query_datasource`
-- `compare_periods`
-- `render_view_image`
-- `render_workbook_image`
-- `export_view_data`
-- `export_query_result`
+- `search_content`: searches datasources, workbooks, views, and fields.
+- `list_datasources`: lists compact datasource metadata.
+- `get_datasource`: returns one datasource and optional field metadata.
+- `get_field_values`: returns representative values for one field.
+- `list_workbooks`: lists compact workbook metadata.
+- `get_workbook`: returns one workbook and optional compact views.
+- `list_views`: lists compact view metadata.
+- `get_view`: returns one view, chart config, and optional saved query spec.
+- `get_view_data`: runs or reuses a saved view query and returns a bounded preview.
+- `query_datasource`: runs a validated structured query and returns a bounded preview plus
+  `query_result_id`.
+- `compare_periods`: compares a measure across two periods with optional dimensions.
+- `render_view_image`: writes a deterministic SVG render for one view under `LOOKOUT_FS_ROOT`.
+- `render_workbook_image`: writes a deterministic SVG dashboard render under `LOOKOUT_FS_ROOT`.
+- `export_view_data`: exports the rows behind a view under `LOOKOUT_FS_ROOT`.
+- `export_query_result`: exports a prior query result under `LOOKOUT_FS_ROOT`.
 
 ## Workflow mapping
 
@@ -107,15 +105,252 @@ Planned workflows map to tools as follows:
 - Dashboard rendering: `render_workbook_image`
 - Failure recovery: standard error envelopes plus warnings for degraded but readable states
 
+## Tool examples
+
+Examples are abbreviated but preserve the request/response shape returned by MCP tools.
+
+### `search_content`
+
+Request:
+
+```json
+{"query": "revenue", "content_types": ["workbook", "view"], "page_size": 2}
+```
+
+Response:
+
+```json
+{
+  "items": [{"id": "view_...", "kind": "view", "label": "Q1 Revenue by Region", "score": 300}],
+  "row_count": 8,
+  "returned_row_count": 2,
+  "truncated": true,
+  "next_cursor": "eyJ...",
+  "warnings": []
+}
+```
+
+### `list_datasources`
+
+Request:
+
+```json
+{"status": "cache_stale", "page_size": 10}
+```
+
+Response:
+
+```json
+{
+  "items": [{"id": "ds_...", "label": "Store Performance", "status": "cache_stale", "theme": "store performance", "row_count": 37200, "tags": ["store performance", "cache_stale", "seeded"]}],
+  "row_count": 2,
+  "returned_row_count": 2,
+  "truncated": false,
+  "next_cursor": null,
+  "warnings": [{"code": "CACHE_STALE", "message": "Datasource cache is stale; results may lag the source system.", "details": {"status": "cache_stale"}}]
+}
+```
+
+### `get_datasource`
+
+Request:
+
+```json
+{"datasource": "Retail Sales", "include_fields": true}
+```
+
+Response:
+
+```json
+{
+  "datasource": {"id": "ds_...", "label": "Retail Sales", "status": "available", "row_count": 482400},
+  "fields": [{"id": "fld_...", "name": "revenue", "data_type": "decimal", "semantic_role": "measure", "default_aggregation": "sum"}],
+  "warnings": []
+}
+```
+
+### `get_field_values`
+
+Request:
+
+```json
+{"datasource": "Retail Sales", "field": "region", "page_size": 4}
+```
+
+Response:
+
+```json
+{"items": [{"id": "fld_...:1", "value": "Northeast"}], "row_count": 4, "returned_row_count": 4, "truncated": false, "next_cursor": null, "warnings": []}
+```
+
+### `list_workbooks`
+
+Request:
+
+```json
+{"datasource": "Retail Sales", "page_size": 10}
+```
+
+Response:
+
+```json
+{"items": [{"id": "wb_...", "title": "Retail Sales Executive Dashboard", "project": "Executive Dashboards", "owner": "lookout-demo", "tags": ["retail sales", "dashboard", "executive"]}], "row_count": 6, "returned_row_count": 6, "truncated": false, "next_cursor": null, "warnings": []}
+```
+
+### `get_workbook`
+
+Request:
+
+```json
+{"workbook": "Retail Sales Executive Dashboard", "include_views": true}
+```
+
+Response:
+
+```json
+{"workbook": {"id": "wb_...", "title": "Retail Sales Executive Dashboard", "project": "Executive Dashboards"}, "views": [{"id": "view_...", "title": "Dashboard: Q1 Revenue by Region", "chart_type": "bar"}], "warnings": []}
+```
+
+### `list_views`
+
+Request:
+
+```json
+{"datasource": "Retail Sales", "chart_type": "bar"}
+```
+
+Response:
+
+```json
+{"items": [{"id": "view_...", "title": "Q1 Revenue by Region", "workbook_id": "wb_...", "datasource_id": "ds_...", "chart_type": "bar", "position": 1}], "row_count": 2, "returned_row_count": 2, "truncated": false, "next_cursor": null, "warnings": []}
+```
+
+### `get_view`
+
+Request:
+
+```json
+{"view": "Q1 Revenue by Region", "include_query_spec": true}
+```
+
+Response:
+
+```json
+{"view": {"id": "view_...", "title": "Q1 Revenue by Region", "chart_type": "bar", "query_spec": {"operation": "aggregate", "group_by": ["region"], "metrics": [{"field": "revenue", "aggregation": "sum"}]}}, "warnings": []}
+```
+
+### `get_view_data`
+
+Request:
+
+```json
+{"view": "Q1 Revenue by Region", "preview_limit": 2}
+```
+
+Response:
+
+```json
+{"query_result_id": "run_...", "rows": [{"region": "Northeast", "revenue": 100000}], "row_count": 10, "returned_row_count": 2, "truncated": true, "next_cursor": null, "warnings": [{"code": "RESULT_TRUNCATED", "message": "Inline rows were truncated to the preview limit.", "details": {"row_count": 10, "returned_row_count": 2}}]}
+```
+
+### `query_datasource`
+
+Request:
+
+```json
+{"datasource": "Retail Sales", "query_spec": {"group_by": ["region"], "metrics": [{"field": "revenue", "aggregation": "sum"}], "order_by": [{"field": "revenue", "direction": "desc"}]}, "preview_limit": 2}
+```
+
+Response:
+
+```json
+{"query_result_id": "run_...", "rows": [{"region": "West", "sum_revenue": 443210}], "row_count": 4, "returned_row_count": 2, "truncated": true, "next_cursor": null, "warnings": [{"code": "RESULT_TRUNCATED", "message": "Inline rows were truncated to the preview limit.", "details": {"row_count": 4, "returned_row_count": 2}}]}
+```
+
+### `compare_periods`
+
+Request:
+
+```json
+{"datasource": "Retail Sales", "metric": "revenue", "period_field": "order_date", "current_period": {"quarter": "Q1"}, "comparison_period": {"quarter": "Q4"}, "dimensions": ["region"], "preview_limit": 2}
+```
+
+Response:
+
+```json
+{"comparison": {"metric": "revenue", "period_field": "order_date", "current_total": 900000, "comparison_total": 840000, "delta": 60000, "pct_delta": 0.0714}, "rows": [{"region": "Northeast", "current_value": 240000, "comparison_value": 210000, "delta": 30000, "pct_delta": 0.1429}], "row_count": 4, "returned_row_count": 2, "truncated": true, "next_cursor": null, "warnings": [{"code": "RESULT_TRUNCATED", "message": "Inline rows were truncated to the preview limit.", "details": {"row_count": 4, "returned_row_count": 2}}]}
+```
+
+### `render_view_image`
+
+Request:
+
+```json
+{"view": "Q1 Revenue by Region", "width": 1200, "height": 800}
+```
+
+Response:
+
+```json
+{"render_id": "rnd_...", "artifact_path": "renders/rnd_....svg", "width": 1200, "height": 800, "status": "ready", "warnings": []}
+```
+
+### `render_workbook_image`
+
+Request:
+
+```json
+{"workbook": "Retail Sales Executive Dashboard", "width": 1440, "height": 960}
+```
+
+Response:
+
+```json
+{"render_id": "rnd_...", "artifact_path": "renders/rnd_....svg", "width": 1440, "height": 960, "status": "ready", "warnings": []}
+```
+
+### `export_view_data`
+
+Request:
+
+```json
+{"view": "Q1 Revenue by Region", "format": "csv"}
+```
+
+Response:
+
+```json
+{"export_id": "exp_...", "artifact_path": "exports/exp_....csv", "format": "csv", "row_count": 10, "status": "ready", "warnings": []}
+```
+
+### `export_query_result`
+
+Request:
+
+```json
+{"query_result_id": "run_...", "format": "json"}
+```
+
+Response:
+
+```json
+{"export_id": "exp_...", "artifact_path": "exports/exp_....json", "format": "json", "row_count": 4, "status": "ready", "warnings": []}
+```
+
+Example error:
+
+```json
+{"error": {"code": "SOURCE_UNAVAILABLE", "message": "Datasource source is offline; ad hoc queries are unavailable.", "details": {"datasource_id": "ds_...", "status": "source_offline"}}}
+```
+
 ## Pagination and filter semantics
 
-List and query tools will be bounded by default. Metadata list tools should default to small pages
-and return compact items. Query tools should return previews inline and require exports for large
-result sets. Cursor pagination will use opaque cursors that encode version, sort key, last seen ID,
-and a filter hash.
+List and query tools are bounded by default. Metadata list tools default to small pages and return
+compact items. Query tools return previews inline and require exports for large result sets. Cursor
+pagination uses opaque cursors that encode version, sort key, last seen ID, and a filter hash.
 
-Filters will be validated against datasource field metadata, field data types, allowed operators,
-and sortability/filterability flags.
+Filters are validated against datasource field metadata, field data types, allowed operators, and
+sortability/filterability flags.
 
 ## AI agent and token strategy
 
@@ -124,9 +359,9 @@ delegates reasoning to an external model. The LLM is the MCP client. The server 
 for model-visible tool descriptions, compact responses, deterministic ambiguity handling, and
 recoverable errors.
 
-All planned MCP tools are described in a local tool registry. Each registry entry records the tool
-name, exact model-visible description, input model, output model, common error codes,
-documentation notes, and examples. The registry covers:
+All MCP tools are described in a local tool registry. Each registry entry records the tool name,
+exact model-visible description, input model, output model, common error codes, documentation
+notes, and examples. The registry covers:
 
 - `search_content`
 - `list_datasources`
@@ -188,8 +423,8 @@ Common warnings are structured and model-visible:
 
 ## Open questions
 
-- How much SQL mode should be exposed versus structured-only query input?
-- What minimum seed scale best demonstrates realistic BI discovery without bloating the repo?
+- Whether a later phase should add a read-only SQL compatibility mode. The reference
+  implementation currently rejects SQL with `UNSUPPORTED_SQL` and requires structured query specs.
 - Whether the optional demo UI is worth implementing after the core MCP contract is complete.
 
 ## Seed data strategy
@@ -232,8 +467,8 @@ application, migration tracking, SQLite ID constraints, Pydantic ID validation, 
 counts, relationship integrity, datasource status coverage, chart type coverage, allowed operator
 presence, workbook/view relationships, and artifact paths staying under `LOOKOUT_FS_ROOT`.
 
-Later phases will add pagination, fuzzy matching, query validation, render/export behavior, and
-integration tests for every MCP tool as those tool contracts are implemented.
+Backend/API tests cover pagination, fuzzy matching, query validation, render/export behavior, and
+integration tests for every MCP tool.
 
 ## Explicit tradeoffs
 

@@ -59,9 +59,19 @@ make run
 
 ## Current Tool Surface
 
-The bootstrap phase exposes a single `health_check` tool. Later phases will add the full
-agent-facing BI workflow: content discovery, datasource inspection, workbook/view access, bounded
-queries, period comparison, deterministic renders, and exports.
+The MCP server exposes `health_check` plus the core Lookout BI workflow tools:
+
+- Discovery: `search_content`, `list_datasources`, `get_datasource`, `get_field_values`
+- Workbook and view inspection: `list_workbooks`, `get_workbook`, `list_views`, `get_view`
+- Analysis: `get_view_data`, `query_datasource`, `compare_periods`
+- Artifacts: `render_view_image`, `render_workbook_image`, `export_view_data`,
+  `export_query_result`
+
+All tool inputs are validated with Pydantic and all failures return:
+
+```json
+{"error": {"code": "...", "message": "...", "details": {}}}
+```
 
 ## Current Data Model
 
