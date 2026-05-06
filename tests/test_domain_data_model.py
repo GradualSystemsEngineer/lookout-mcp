@@ -14,7 +14,7 @@ EXPECTED_COUNTS = {
     "datasources": 6,
     "datasource_fields": 48,
     "workbooks": 36,
-    "views": 60,
+    "views": 180,
     "query_results": 5,
     "exports": 4,
     "renders": 6,
@@ -154,12 +154,26 @@ def test_seed_integrity_relationships_statuses_and_chart_types(tmp_path: Path) -
                 """
             ).fetchone()["count"]
         )
+        workbook_view_counts = [
+            int(row["view_count"])
+            for row in connection.execute(
+                """
+                SELECT COUNT(*) AS view_count
+                FROM views
+                GROUP BY workbook_id
+                ORDER BY workbook_id
+                """
+            ).fetchall()
+        ]
 
     assert foreign_key_errors == []
     assert statuses == {"available", "cache_stale", "source_offline"}
     assert chart_types == {"bar", "pie", "treemap", "line", "histogram"}
     assert fields_without_operators == 0
     assert workbook_orphans == 0
+    assert workbook_view_counts
+    assert min(workbook_view_counts) >= 4
+    assert max(workbook_view_counts) <= 12
 
 
 @pytest.mark.integration

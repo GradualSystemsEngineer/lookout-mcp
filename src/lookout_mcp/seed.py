@@ -748,56 +748,68 @@ def build_seed_records() -> SeedRecords:
                 )
             )
 
-        for view in datasource.views:
-            workbook_key = f"{datasource.key}_{view.key}_analysis"
+        for primary_view in datasource.views:
+            workbook_key = f"{datasource.key}_{primary_view.key}_analysis"
             workbook_id = deterministic_id("wb", f"workbook:{workbook_key}")
             workbooks.append(
                 WorkbookRecord(
                     id=workbook_id,
                     name=workbook_key,
-                    title=f"{datasource.label}: {view.title}",
-                    description=f"Focused analysis workbook for {view.description.lower()}",
+                    title=f"{datasource.label}: {primary_view.title}",
+                    description=(
+                        "Focused analysis dashboard for "
+                        f"{primary_view.description.lower()} Includes supporting seeded views "
+                        f"for adjacent {datasource.theme} context."
+                    ),
                     project="Seeded BI Analysis",
                     owner="lookout-demo",
-                    tags=[datasource.theme, view.chart_type, "analysis"],
-                    default_filters=view.default_filters,
+                    tags=[datasource.theme, primary_view.chart_type, "analysis", "dashboard"],
+                    default_filters=primary_view.default_filters,
                 )
             )
-            analysis_view = _view_record(
-                datasource_id=datasource_id,
-                workbook_id=workbook_id,
-                datasource=datasource,
-                view=view,
-                name_suffix="analysis",
-                title_prefix="",
-                position=1,
-            )
-            views.append(analysis_view)
 
-            if view.key in {
-                "q1_revenue_region",
-                "top_store_growth",
-                "pipeline_stage_health",
-                "tickets_by_priority",
-                "stockouts_by_category",
-            }:
-                query_result = QueryResultRecord(
-                    id=deterministic_id("run", f"query:{datasource.key}:{view.key}"),
+            for position, view in enumerate(datasource.views, start=1):
+                is_primary_view = view.key == primary_view.key
+                analysis_view = _view_record(
                     datasource_id=datasource_id,
-                    view_id=analysis_view.id,
-                    query_spec=analysis_view.query_spec,
-                    row_count=10,
-                    preview_rows=_preview_rows(view),
-                    status="completed",
-                    warnings=[]
-                    if datasource.status == "available"
-                    else [
-                        f"Datasource status is {datasource.status}; served from deterministic cache."
-                    ],
-                    executed_at=SEED_TIMESTAMP,
+                    workbook_id=workbook_id,
+                    datasource=datasource,
+                    view=view,
+                    name_suffix="analysis"
+                    if is_primary_view
+                    else f"{primary_view.key}_context",
+                    title_prefix=""
+                    if is_primary_view
+                    else f"{primary_view.title} Context: ",
+                    position=position,
                 )
-                query_results.append(query_result)
-                query_results_by_key[f"{datasource.key}:{view.key}"] = query_result
+                views.append(analysis_view)
+
+                if is_primary_view and view.key in {
+                    "q1_revenue_region",
+                    "top_store_growth",
+                    "pipeline_stage_health",
+                    "tickets_by_priority",
+                    "stockouts_by_category",
+                }:
+                    query_result = QueryResultRecord(
+                        id=deterministic_id("run", f"query:{datasource.key}:{view.key}"),
+                        datasource_id=datasource_id,
+                        view_id=analysis_view.id,
+                        query_spec=analysis_view.query_spec,
+                        row_count=10,
+                        preview_rows=_preview_rows(view),
+                        status="completed",
+                        warnings=[]
+                        if datasource.status == "available"
+                        else [
+                            "Datasource status is "
+                            f"{datasource.status}; served from deterministic cache."
+                        ],
+                        executed_at=SEED_TIMESTAMP,
+                    )
+                    query_results.append(query_result)
+                    query_results_by_key[f"{datasource.key}:{view.key}"] = query_result
 
         dashboard_key = f"{datasource.key}_executive_dashboard"
         dashboard_id = deterministic_id("wb", f"workbook:{dashboard_key}")

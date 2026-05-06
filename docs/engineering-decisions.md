@@ -19,7 +19,9 @@ normalizing the mock data would add complexity without improving the agent contr
 
 Migrations are ordered SQL files under `migrations/` and are tracked in `_lookout_migrations`.
 Seed data is deterministic: stable natural keys produce stable IDs, and tests can regenerate the
-same BI scenarios without network access or API keys.
+same BI scenarios without network access or API keys. The catalog intentionally seeds 36
+workbooks with five views each so the mock demonstrates the brief's 30-80 dashboard and 4-12 chart
+scale without making local tests expensive.
 
 ## Tool Surface Design
 
