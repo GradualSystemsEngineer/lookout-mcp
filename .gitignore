@@ -1,0 +1,17 @@
+.DS_Store
+.env
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+*.egg-info/
+*.pyc
+lookout.sqlite3
+var/cache/*
+var/exports/*
+var/renders/*
+!var/cache/.gitkeep
+!var/exports/.gitkeep
+!var/renders/.gitkeep
+

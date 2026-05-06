@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lookout-mcp"
+version = "0.1.0"
+description = "Offline mock MCP server for a Tableau-inspired internal BI platform."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "UNLICENSED" }
+authors = [{ name = "Lookout Take-Home Candidate" }]
+dependencies = [
+  "mcp>=1.13,<2",
+  "pydantic>=2.8,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.13,<2",
+  "pytest>=8.3,<9",
+  "ruff>=0.8,<1",
+]
+
+[project.scripts]
+lookout-mcp = "lookout_mcp.server:main"
+lookout-db = "lookout_mcp.db:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lookout_mcp"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+markers = [
+  "unit: fast unit tests",
+  "integration: tests that exercise multiple local components",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+mypy_path = "src"
+files = ["src", "tests"]
+
