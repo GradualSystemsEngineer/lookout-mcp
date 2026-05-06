@@ -8,10 +8,14 @@ __pycache__/
 *.egg-info/
 *.pyc
 lookout.sqlite3
+ui/dist/
+ui/node_modules/
+ui/*.tsbuildinfo
+ui/vite.config.d.ts
+ui/vite.config.js
 var/cache/*
 var/exports/*
 var/renders/*
 !var/cache/.gitkeep
 !var/exports/.gitkeep
 !var/renders/.gitkeep
-

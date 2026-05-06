@@ -1,4 +1,4 @@
-.PHONY: install lint format test typecheck seed run smoke
+.PHONY: install lint format test typecheck seed run smoke ui-install ui-api ui-dev ui-test
 
 PYTHON ?= python3.12
 
@@ -32,3 +32,15 @@ run:
 
 smoke:
 	.venv/bin/python scripts/smoke.py
+
+ui-install:
+	npm --prefix ui install
+
+ui-api:
+	.venv/bin/python -m lookout_mcp.demo_ui
+
+ui-dev:
+	npm --prefix ui run dev
+
+ui-test:
+	npm --prefix ui test

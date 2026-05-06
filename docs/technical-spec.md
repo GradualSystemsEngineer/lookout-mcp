@@ -425,7 +425,18 @@ Common warnings are structured and model-visible:
 
 - Whether a later phase should add a read-only SQL compatibility mode. The reference
   implementation currently rejects SQL with `UNSUPPORTED_SQL` and requires structured query specs.
-- Whether the optional demo UI is worth implementing after the core MCP contract is complete.
+
+## Optional evaluator UI
+
+The reference implementation includes Lookout Explorer, a secondary local demo UI under `ui/`.
+This is not part of the MCP contract and is not required for agent usage. A dev-only stdlib HTTP
+adapter in `lookout_mcp.demo_ui` reuses the same callable backend functions as the MCP tools for
+datasource discovery, workbook/view inspection, bounded queries, renders, and exports. Artifact
+metadata is read from SQLite and artifact files are served only from paths constrained to
+`LOOKOUT_FS_ROOT`.
+
+The UI exists to help a human evaluator inspect seeded workflows in a browser. It deliberately
+avoids auth, external services, charting dependencies, and duplicated business logic.
 
 ## Seed data strategy
 

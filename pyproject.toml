@@ -25,6 +25,7 @@ dev = [
 [project.scripts]
 lookout-mcp = "lookout_mcp.server:main"
 lookout-db = "lookout_mcp.db:main"
+lookout-demo-ui = "lookout_mcp.demo_ui:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lookout_mcp"]
@@ -51,4 +52,3 @@ strict = true
 warn_unreachable = true
 mypy_path = "src"
 files = ["src", "tests"]
-
