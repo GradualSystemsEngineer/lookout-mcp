@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import html
 import json
+import logging
 import re
 import sqlite3
 import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import date, datetime
@@ -69,6 +72,7 @@ TOOL_TIMESTAMP = "2026-01-15T09:30:00Z"
 
 Aggregation = Literal["sum", "avg", "min", "max", "count", "count_distinct"]
 ExportFormat = Literal["csv", "json"]
+LOGGER = logging.getLogger("lookout_mcp.tools")
 
 
 class _ExpensiveOperationGuard:
@@ -140,8 +144,16 @@ class StructuredQuerySpec(StrictModel):
     timeout_ms: int | None = None
 
 
+def _configure_logging(log_level_name: str | None = None) -> None:
+    log_level = getattr(logging, log_level_name or "INFO", logging.INFO)
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=log_level, format="%(message)s")
+    LOGGER.setLevel(log_level)
+
+
 def _loaded_config(config: LookoutConfig | None) -> LookoutConfig:
     loaded = load_config() if config is None else config
+    _configure_logging(loaded.log_level)
     loaded.ensure_filesystem_root()
     return loaded
 
@@ -815,31 +827,82 @@ def _run_tool(
     handler: Callable[[Any, LookoutConfig], dict[str, Any]],
     config: LookoutConfig | None,
 ) -> dict[str, Any]:
+    tool_name = handler.__name__.removeprefix("_")
+    started_at = time.perf_counter()
+    result: dict[str, Any]
+    _configure_logging(config.log_level if config else None)
     try:
         validated = input_model.model_validate(dict(payload))
-        return handler(validated, _loaded_config(config))
+        result = handler(validated, _loaded_config(config))
     except ValidationError as exc:
-        return error_envelope(
+        result = error_envelope(
             "INVALID_INPUT",
             "Input validation failed.",
             {"errors": exc.errors(include_url=False)},
         )
     except ConfigError as exc:
-        return error_envelope(
+        result = error_envelope(
             "CONFIG_MISSING",
             str(exc),
             {"missing": exc.missing},
         )
     except (WorkflowError, TokenLimitError, InvalidCursorError, AmbiguousMatchError) as exc:
-        return exc.to_envelope()
+        result = exc.to_envelope()
     except ValueError as exc:
-        return error_envelope("INVALID_INPUT", str(exc), {})
+        result = error_envelope("INVALID_INPUT", str(exc), {})
+    except sqlite3.Error as exc:
+        result = error_envelope(
+            "DATASTORE_ERROR",
+            "Lookout could not read or update the local SQLite database.",
+            {"recovery_hint": "Run make migrate and make seed, then retry the tool call."},
+        )
+        LOGGER.debug("sqlite datastore error in %s: %s", tool_name, exc)
+    except OSError as exc:
+        result = error_envelope(
+            "FILESYSTEM_ERROR",
+            "Lookout could not access the configured local filesystem root.",
+            {"recovery_hint": "Check LOOKOUT_FS_ROOT exists and is writable."},
+        )
+        LOGGER.debug("filesystem error in %s: %s", tool_name, exc)
+    except Exception as exc:  # pragma: no cover - defensive boundary for MCP clients
+        result = error_envelope(
+            "INTERNAL_ERROR",
+            "Lookout failed unexpectedly while handling this tool call.",
+            {"recovery_hint": "Retry with the same bounded request, then inspect local logs."},
+        )
+        LOGGER.debug("unexpected error in %s: %s", tool_name, exc)
+
+    _log_tool_result(tool_name, started_at, result)
+    return result
+
+
+def _log_tool_result(tool_name: str, started_at: float, result: Mapping[str, Any]) -> None:
+    error = result.get("error")
+    error_code = str(error["code"]) if isinstance(error, Mapping) else None
+    status = "error" if error_code else "ok"
+    payload = {
+        "event": "lookout.tool_call",
+        "tool_name": tool_name,
+        "duration_ms": round((time.perf_counter() - started_at) * 1000, 3),
+        "status": status,
+        "row_count": result.get("row_count"),
+        "returned_row_count": result.get("returned_row_count"),
+        "error_code": error_code,
+    }
+    LOGGER.info(json.dumps(payload, sort_keys=True))
 
 
 def _safe_artifact_path(fs_root: Path, relative_path: str) -> Path:
     root = fs_root.resolve()
     target = (root / relative_path).resolve()
-    target.relative_to(root)
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise WorkflowError(
+            "INVALID_PATH",
+            "Artifact path escapes LOOKOUT_FS_ROOT.",
+            {"artifact_path": relative_path},
+        ) from exc
     return target
 
 
@@ -1500,6 +1563,7 @@ def _render_artifact(
             artifact_path = f"renders/{render_id}.svg"
             target_path = _safe_artifact_path(config.fs_root, artifact_path)
             target_path.parent.mkdir(parents=True, exist_ok=True)
+            escaped_title = html.escape(title)
             target_path.write_text(
                 "\n".join(
                     [
@@ -1507,9 +1571,12 @@ def _render_artifact(
                             '<svg xmlns="http://www.w3.org/2000/svg" '
                             f'width="{width}" height="{height}">'
                         ),
-                        f"<title>{title}</title>",
+                        f"<title>{escaped_title}</title>",
                         f'<rect width="{width}" height="{height}" fill="#f8fafc"/>',
-                        f'<text x="32" y="48" font-size="28" fill="#111827">{title}</text>',
+                        (
+                            '<text x="32" y="48" font-size="28" fill="#111827">'
+                            f"{escaped_title}</text>"
+                        ),
                         (
                             '<text x="32" y="88" font-size="16" fill="#475569">'
                             f"Lookout deterministic {target_type} render</text>"

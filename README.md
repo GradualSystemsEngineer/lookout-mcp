@@ -151,6 +151,9 @@ All tool inputs are validated with Pydantic and all failures return:
 {"error": {"code": "...", "message": "...", "details": {}}}
 ```
 
+Each callable backend tool also emits one structured JSON log event with tool name, duration,
+status, row counts, and error code. Logs intentionally exclude preview rows and exported data.
+
 ## Current Data Model
 
 The reference implementation includes SQLite migrations and deterministic seed data for the core
@@ -178,8 +181,8 @@ source-offline datasource states.
 - `migrations/`: ordered SQLite migration files.
 - `scripts/`: local utility scripts.
 - `tests/`: pytest suite.
-- `data/`: optional deterministic seed data inputs in later phases.
-- `var/`: local generated files, ignored except for directory placeholders.
+- `data/`: optional deterministic seed data inputs.
+- `var/`: local generated files, ignored except for `.gitkeep` files.
 
 ## Development Commands
 

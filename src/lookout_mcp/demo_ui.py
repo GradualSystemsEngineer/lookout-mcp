@@ -79,7 +79,10 @@ def _artifact_metadata(config: LookoutConfig) -> dict[str, Any]:
 def _safe_file(config: LookoutConfig, relative_path: str) -> Path:
     root = config.fs_root.resolve()
     target = (root / relative_path).resolve()
-    target.relative_to(root)
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("Artifact path escapes LOOKOUT_FS_ROOT.") from exc
     return target
 
 

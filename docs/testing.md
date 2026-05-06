@@ -27,7 +27,8 @@ make smoke
 `make test` reports line coverage for `lookout_mcp` with missing lines. Unit tests cover ID and
 cursor validation, filter/type validation, query builder behavior, error envelopes, fuzzy-match
 ambiguity, and token-safety helpers. Integration tests seed SQLite in a temporary root and exercise
-the MCP contract through callable tool functions.
+the MCP contract through callable tool functions, including structured tool-call logs that omit row
+payloads.
 
 ## Golden Contract Checks
 

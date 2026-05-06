@@ -450,6 +450,27 @@ Token controls are part of the public workflow contract:
 - Large result access goes through `export_view_data` or `export_query_result`, which write files
   under `LOOKOUT_FS_ROOT` and return artifact metadata rather than row dumps.
 
+## Observability and operational safety
+
+Every callable backend tool emits one structured JSON log event named `lookout.tool_call`. The log
+payload includes `tool_name`, `duration_ms`, `status`, `row_count`, `returned_row_count`, and
+`error_code`. Logs intentionally omit preview rows, query result rows, exported data, and artifact
+file contents.
+
+The reference implementation uses standard error envelopes at the backend boundary. Expected
+validation, workflow, cursor, token-limit, configuration, filesystem, and SQLite failures are
+converted into model-visible errors with actionable messages. Unexpected exceptions become
+`INTERNAL_ERROR` with a retry/log-inspection recovery hint.
+
+Security and locality rules are deliberately simple:
+
+- Lookout requires `LOOKOUT_DB_PATH` and `LOOKOUT_FS_ROOT`; no secrets or API keys are needed.
+- Raw SQL mode is disabled. Requests containing `query_spec.sql` return `UNSUPPORTED_SQL`; agents
+  should use structured query specs instead.
+- Render and export filenames are generated from stable Lookout IDs, not user-provided names.
+- Artifact paths are resolved relative to `LOOKOUT_FS_ROOT`; any escape attempt is rejected.
+- Rendered SVG text is escaped before writing local artifact files.
+
 Cursors are opaque base64url-encoded JSON payloads containing a cursor version, sort key, last seen
 ID, and filter hash. Decoding rejects malformed, unsupported-version, sort-mismatched, or
 filter-mismatched cursors with `INVALID_CURSOR`.
@@ -482,8 +503,8 @@ Common warnings are structured and model-visible:
 
 ## Open questions
 
-- Whether a later phase should add a read-only SQL compatibility mode. The reference
-  implementation currently rejects SQL with `UNSUPPORTED_SQL` and requires structured query specs.
+- Whether a future version should add a read-only SQL compatibility mode. The current reference
+  implementation rejects SQL with `UNSUPPORTED_SQL` and requires structured query specs.
 
 ## Optional evaluator UI
 
@@ -526,7 +547,7 @@ Seeded query/export/render metadata demonstrates target workflows:
 - render executive dashboards
 - export raw rows behind a sales pipeline health chart
 
-Small placeholder export and render artifacts are written under `LOOKOUT_FS_ROOT/exports` and
+Small seed export and render artifacts are written under `LOOKOUT_FS_ROOT/exports` and
 `LOOKOUT_FS_ROOT/renders` to keep metadata paths inspectable and constrained to the configured
 filesystem root.
 

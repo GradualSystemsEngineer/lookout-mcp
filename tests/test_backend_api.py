@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -153,6 +155,47 @@ def test_tool_errors_use_standard_envelope(tmp_path: Path) -> None:
     assert source_offline["error"]["code"] == "SOURCE_UNAVAILABLE"
     assert limit["error"]["code"] == "LIMIT_EXCEEDED"
     assert timeout["error"]["code"] == "QUERY_TIMEOUT"
+
+
+@pytest.mark.integration
+def test_tool_calls_emit_structured_observability_logs(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    config = _config(tmp_path)
+
+    with caplog.at_level(logging.INFO, logger="lookout_mcp.tools"):
+        result = api.query_datasource(
+            datasource="Retail Sales",
+            query_spec={"group_by": ["region"], "metrics": [{"field": "revenue"}]},
+            preview_limit=2,
+            _config=config,
+        )
+        error_result = api.list_datasources(page_size=26, _config=config)
+
+    assert result["returned_row_count"] == 2
+    assert error_result["error"]["code"] == "PAGE_SIZE_TOO_LARGE"
+    log_payloads = [
+        json.loads(record.message)
+        for record in caplog.records
+        if record.name == "lookout_mcp.tools"
+    ]
+    success_payload = log_payloads[-2]
+    error_payload = log_payloads[-1]
+    assert success_payload == {
+        "duration_ms": success_payload["duration_ms"],
+        "error_code": None,
+        "event": "lookout.tool_call",
+        "returned_row_count": 2,
+        "row_count": 4,
+        "status": "ok",
+        "tool_name": "query_datasource",
+    }
+    assert error_payload["tool_name"] == "list_datasources"
+    assert error_payload["status"] == "error"
+    assert error_payload["error_code"] == "PAGE_SIZE_TOO_LARGE"
+    assert "rows" not in success_payload
+    assert "rows" not in error_payload
 
 
 @pytest.mark.integration
