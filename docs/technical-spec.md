@@ -189,10 +189,10 @@ These descriptions are the strings registered with FastMCP for model-visible too
 | `get_workbook` | Get one workbook by ID or unambiguous title, including compact view metadata. |
 | `list_views` | List view metadata in compact pages, optionally filtered by workbook, datasource, chart type, or fuzzy query. |
 | `get_view` | Get one view by ID or unambiguous title, including chart configuration and saved query specification. |
-| `get_view_data` | Run the saved query for one view, optionally adding filter overrides, and return a bounded row preview. Large results must be exported with export_view_data. |
+| `get_view_data` | Run the saved query for one view, optionally adding filter overrides, and return a bounded row preview with compact summary statistics. Large results must be exported with export_view_data. |
 | `query_datasource` | Run a structured query against one datasource and return a bounded row preview plus a query_result_id for export. |
 | `compare_periods` | Compare one metric across current and comparison periods, returning bounded preview rows and summary deltas. |
-| `render_view_image` | Render one view to a local image artifact under LOOKOUT_FS_ROOT and return artifact metadata, not inline image bytes. |
+| `render_view_image` | Render one view to a local image artifact under LOOKOUT_FS_ROOT and return artifact metadata, not inline image bytes. Use filter_overrides to render a filtered variant without changing the saved view. |
 | `render_workbook_image` | Render one workbook dashboard to a local image artifact under LOOKOUT_FS_ROOT and return artifact metadata, not inline image bytes. |
 | `export_view_data` | Export the rows behind one view to a local file under LOOKOUT_FS_ROOT. Use this instead of requesting large inline row sets. |
 | `export_query_result` | Export a prior query result to a local file under LOOKOUT_FS_ROOT. Use this for rows beyond the preview limit. |
@@ -509,6 +509,8 @@ Output shape:
 - `truncated`
 - `next_cursor`
 - `warnings`
+- `summary_statistics`: compact min/max/average/trend summary for numeric fields in the returned
+  preview rows.
 
 Common errors: `INVALID_INPUT`, `INVALID_FILTER`, `INVALID_SORT`, `NOT_FOUND`,
 `FIELD_NOT_FOUND`, `AMBIGUOUS_MATCH`, `LIMIT_EXCEEDED`, `QUERY_TIMEOUT`,
@@ -523,7 +525,7 @@ Example:
 Success:
 
 ```json
-{"query_result_id": "run_ac79185d999f", "rows": [{"region": "Central", "sum_revenue": 393102}, {"region": "West", "sum_revenue": 368071}], "row_count": 4, "returned_row_count": 2, "truncated": true, "next_cursor": null, "warnings": [{"code": "RESULT_TRUNCATED", "message": "Inline rows were truncated to the preview limit.", "details": {"row_count": 4, "returned_row_count": 2}}]}
+{"query_result_id": "run_ac79185d999f", "rows": [{"region": "Central", "sum_revenue": 393102}, {"region": "West", "sum_revenue": 368071}], "row_count": 4, "returned_row_count": 2, "truncated": true, "next_cursor": null, "warnings": [{"code": "RESULT_TRUNCATED", "message": "Inline rows were truncated to the preview limit.", "details": {"row_count": 4, "returned_row_count": 2}}], "summary_statistics": {"basis": "returned_preview_rows", "numeric_fields": {"sum_revenue": {"min": 368071, "max": 393102, "avg": 380586.5, "trend": {"first": 393102, "last": 368071, "delta": -25031, "direction": "down"}}}}}
 ```
 
 ### `query_datasource`
@@ -620,6 +622,9 @@ Success:
 Input:
 
 - `view` (required string): view ID or unambiguous view name/title.
+- `filter_overrides` (optional object or array): render-time filters using the same semantics as
+  `get_view_data`. Overrides affect the generated artifact identity but do not modify the saved
+  view.
 - `width` (optional integer): defaults to `1200`, must be positive.
 - `height` (optional integer): defaults to `800`, must be positive.
 
@@ -634,8 +639,8 @@ Output shape:
 - `status`
 - `warnings`
 
-Common errors: `INVALID_INPUT`, `NOT_FOUND`, `AMBIGUOUS_MATCH`, `RENDER_FAILED`,
-`RATE_LIMITED`.
+Common errors: `INVALID_INPUT`, `INVALID_FILTER`, `FIELD_NOT_FOUND`, `NOT_FOUND`,
+`AMBIGUOUS_MATCH`, `LIMIT_EXCEEDED`, `RENDER_FAILED`, `RATE_LIMITED`.
 
 Example:
 
@@ -647,6 +652,12 @@ Success:
 
 ```json
 {"render_id": "rnd_a3adef0c852e", "artifact_path": "renders/rnd_a3adef0c852e.svg", "width": 1200, "height": 800, "status": "ready", "warnings": []}
+```
+
+Filtered example:
+
+```json
+{"view": "Q1 Revenue by Region", "filter_overrides": {"region": "Northeast"}, "width": 1200, "height": 800}
 ```
 
 ### `render_workbook_image`
@@ -668,8 +679,8 @@ Output shape:
 - `status`
 - `warnings`
 
-Common errors: `INVALID_INPUT`, `NOT_FOUND`, `AMBIGUOUS_MATCH`, `RENDER_FAILED`,
-`RATE_LIMITED`.
+Common errors: `INVALID_INPUT`, `NOT_FOUND`, `AMBIGUOUS_MATCH`, `LIMIT_EXCEEDED`,
+`RENDER_FAILED`, `RATE_LIMITED`.
 
 Example:
 
@@ -701,8 +712,8 @@ Output shape:
 - `status`
 - `warnings`
 
-Common errors: `INVALID_INPUT`, `NOT_FOUND`, `AMBIGUOUS_MATCH`, `EXPORT_FAILED`,
-`RATE_LIMITED`.
+Common errors: `INVALID_INPUT`, `NOT_FOUND`, `AMBIGUOUS_MATCH`, `LIMIT_EXCEEDED`,
+`EXPORT_FAILED`, `RATE_LIMITED`.
 
 Example:
 
@@ -735,8 +746,8 @@ Output shape:
 - `status`
 - `warnings`
 
-Common errors: `INVALID_INPUT`, `NOT_FOUND`, `AMBIGUOUS_MATCH`, `EXPORT_FAILED`,
-`RATE_LIMITED`.
+Common errors: `INVALID_INPUT`, `NOT_FOUND`, `AMBIGUOUS_MATCH`, `LIMIT_EXCEEDED`,
+`EXPORT_FAILED`, `RATE_LIMITED`.
 
 Example:
 
@@ -752,19 +763,18 @@ Success:
 
 ## Workflow-to-tool Mapping
 
-| Workflow | Tools |
-| --- | --- |
-| Check local server readiness | `health_check` |
-| Discover content by topic | `search_content`, then `get_datasource`, `get_workbook`, or `get_view` |
-| Browse datasources | `list_datasources`, `get_datasource`, `get_field_values` |
-| Inspect dashboards | `list_workbooks`, `get_workbook`, `list_views`, `get_view` |
-| Preview a saved worksheet | `get_view`, `get_view_data` |
-| Apply ad hoc filters to a saved worksheet | `get_view_data` with `filter_overrides` |
-| Run ad hoc structured analysis | `query_datasource` |
-| Compare current and prior periods | `compare_periods` |
-| Produce dashboard/view image artifacts | `render_workbook_image`, `render_view_image` |
-| Retrieve rows beyond inline limits | `export_view_data`, `export_query_result` |
-| Recover from failures | Standard error envelopes, candidate suggestions, warnings, and retry hints |
+| Workflow | Tool sequence | Notes |
+| --- | --- | --- |
+| Check local server readiness | `health_check` | Confirms local configuration paths before analysis work. |
+| W1 Explore datasources | `search_content` or `list_datasources` -> `get_datasource` -> `get_field_values` | List tools return compact datasource summaries; get tools return field metadata and representative values without bulk dumps. |
+| W2 View workbook contents | `list_workbooks` -> `get_workbook` -> `list_views` or `get_view` | Workbooks expose title, description, project, owner, and contained compact view metadata. |
+| W3 Apply filters to views | `get_view` -> `get_view_data` with `filter_overrides` | Overrides are validated against datasource fields and are applied only to that run. |
+| W4 Query datasource | `get_datasource` -> `query_datasource` -> optional `export_query_result` | Structured query specs support detail, aggregate, and histogram retrieval with bounded previews and CSV/JSON export. |
+| W5 Compare time periods | `get_datasource` -> `compare_periods` | Returns metric totals, deltas, percentage deltas, and bounded dimension rows for the agent to analyze. |
+| W6 Analyze view details | `get_view` -> `get_view_data` | `get_view` returns chart type, title, chart config, axis/field mapping, saved query spec, and `get_view_data` returns values plus compact summary statistics. |
+| W7 Generate view images | `render_view_image` with optional `filter_overrides`; `render_workbook_image` for dashboards | Render tools write SVG artifacts under `LOOKOUT_FS_ROOT` and return metadata instead of inline image bytes. |
+| W8 Export view data | `export_view_data`; or `get_view_data` -> `export_query_result` | CSV headers are derived from the query rows behind the view/query result and written under `LOOKOUT_FS_ROOT/exports`. |
+| Recover from failures | Standard error envelopes, candidate suggestions, warnings, and retry hints | Agents can retry with candidate IDs, smaller limits, corrected fields, or exports as directed by error details. |
 
 ## Pagination Semantics
 
@@ -863,6 +873,18 @@ Expected errors are deterministic and actionable:
 
 The reference implementation has no external HTTP rate limit because it does not call external
 services. Local concurrency limits apply to expensive artifact operations.
+
+## Open Questions and Positions
+
+### Should read-only failure modes be exposed?
+
+Position: yes. Even though Lookout is offline and synthetic, agents should see realistic
+read-only degradation states because analysts routinely encounter stale extracts, unavailable
+sources, and cached dashboard data. Hiding those states would make the mock less like a BI
+platform and would fail to train agents to recover safely.
+
+Lookout exposes these states as `status` on datasources, structured warnings on readable cached
+workflows, and hard errors when a workflow cannot safely proceed.
 
 ## Position on Read-only Failure Modes
 
@@ -1018,6 +1040,21 @@ contents.
 - `.env.example` keeps local generated files under `./var`.
 - Generated `var/` contents, local SQLite databases, virtualenvs, and caches are not submission
   artifacts.
+
+### Tool SQL and Filesystem Interactions
+
+| Tool area | SQLite tables touched | Filesystem interaction |
+| --- | --- | --- |
+| Discovery/list/get | Reads `datasources`, `datasource_fields`, `workbooks`, and `views` with indexed filters and deterministic fuzzy matching. | None. |
+| Saved view data | Reads `views`, `datasources`, `datasource_fields`, and cached `query_results`; writes/updates `query_results` when a filtered run is generated. | None. |
+| Ad hoc datasource query | Reads `datasources` and `datasource_fields`; writes/updates `query_results` with bounded preview rows and run metadata. | None. |
+| Period comparison | Reads `datasources` and `datasource_fields`; no persisted query result because the response is already a compact comparison summary. | None. |
+| View/workbook render | Reads `views`, `workbooks`, `datasources`, and `datasource_fields`; writes/updates `renders`. | Writes generated SVG files to `LOOKOUT_FS_ROOT/renders/<render_id>.svg`; path containment is checked before writing. |
+| View/query export | Reads `query_results`, `views`, and `datasources`; writes/updates `exports`. | Writes CSV or JSON files to `LOOKOUT_FS_ROOT/exports/<export_id>.<format>`; no user-supplied filenames are accepted. |
+
+Render-time `filter_overrides` are validated against datasource fields and become part of the
+deterministic render ID. Export column headers are derived from the row dictionaries behind the
+view or query result so CSV headers match the returned data model.
 
 ## Explicit Tradeoffs
 

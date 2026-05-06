@@ -166,6 +166,13 @@ class ComparePeriodsInput(StrictModel):
 
 class RenderViewImageInput(StrictModel):
     view: str = Field(description="View ID or unambiguous view name/title.")
+    filter_overrides: dict[str, object] | list[dict[str, object]] = Field(
+        default_factory=dict,
+        description=(
+            "Optional render-time filters. A dict is treated as field=value equality filters; "
+            "a list may use structured filter objects."
+        ),
+    )
     width: int = Field(default=1200, gt=0)
     height: int = Field(default=800, gt=0)
 
@@ -227,6 +234,7 @@ class ViewDetailOutput(StrictModel):
 
 class ViewDataOutput(QueryPreviewOutput):
     query_result_id: str | None = None
+    summary_statistics: dict[str, object] = Field(default_factory=dict)
 
 
 class QueryDatasourceOutput(QueryPreviewOutput):
@@ -275,12 +283,22 @@ COMMON_QUERY_ERRORS = [
     "QUERY_TIMEOUT",
     "SOURCE_UNAVAILABLE",
 ]
-COMMON_ARTIFACT_ERRORS = [
+COMMON_RENDER_ERRORS = [
+    "INVALID_INPUT",
+    "INVALID_FILTER",
+    "FIELD_NOT_FOUND",
+    "NOT_FOUND",
+    "AMBIGUOUS_MATCH",
+    "LIMIT_EXCEEDED",
+    "RENDER_FAILED",
+    "RATE_LIMITED",
+]
+COMMON_EXPORT_ERRORS = [
     "INVALID_INPUT",
     "NOT_FOUND",
     "AMBIGUOUS_MATCH",
+    "LIMIT_EXCEEDED",
     "EXPORT_FAILED",
-    "RENDER_FAILED",
     "RATE_LIMITED",
 ]
 
@@ -318,7 +336,8 @@ MODEL_VISIBLE_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_view_data": (
         "Run the saved query for one view, optionally adding filter overrides, and return "
-        "a bounded row preview. Large results must be exported with export_view_data."
+        "a bounded row preview with compact summary statistics. Large results must be exported "
+        "with export_view_data."
     ),
     "query_datasource": (
         "Run a structured query against one datasource and return a bounded row preview "
@@ -330,7 +349,8 @@ MODEL_VISIBLE_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "render_view_image": (
         "Render one view to a local image artifact under LOOKOUT_FS_ROOT and return "
-        "artifact metadata, not inline image bytes."
+        "artifact metadata, not inline image bytes. Use filter_overrides to render a filtered "
+        "variant without changing the saved view."
     ),
     "render_workbook_image": (
         "Render one workbook dashboard to a local image artifact under LOOKOUT_FS_ROOT "
@@ -547,15 +567,25 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         name="render_view_image",
         input_model=RenderViewImageInput,
         output_model=RenderArtifactOutput,
-        common_errors=COMMON_ARTIFACT_ERRORS,
+        common_errors=COMMON_RENDER_ERRORS,
         notes=[
             "Returns artifact metadata and a path relative to LOOKOUT_FS_ROOT.",
             "Never returns inline image bytes.",
+            "Render-time filters are validated with the same field/operator rules as view data.",
         ],
         examples=[
             ToolExample(
                 description="Render a view.",
                 input={"view": "Q1 Revenue by Region", "width": 1200, "height": 800},
+            ),
+            ToolExample(
+                description="Render a filtered view variant.",
+                input={
+                    "view": "Q1 Revenue by Region",
+                    "filter_overrides": {"region": "Northeast"},
+                    "width": 1200,
+                    "height": 800,
+                },
             )
         ],
     ),
@@ -563,7 +593,11 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         name="render_workbook_image",
         input_model=RenderWorkbookImageInput,
         output_model=RenderArtifactOutput,
-        common_errors=COMMON_ARTIFACT_ERRORS,
+        common_errors=[
+            error
+            for error in COMMON_RENDER_ERRORS
+            if error not in {"INVALID_FILTER", "FIELD_NOT_FOUND"}
+        ],
         notes=[
             "Returns artifact metadata and a path relative to LOOKOUT_FS_ROOT.",
             "Never returns inline image bytes.",
@@ -583,7 +617,7 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         name="export_view_data",
         input_model=ExportViewDataInput,
         output_model=ExportArtifactOutput,
-        common_errors=COMMON_ARTIFACT_ERRORS,
+        common_errors=COMMON_EXPORT_ERRORS,
         notes=["Exports large row sets to a local artifact instead of returning rows inline."],
         examples=[
             ToolExample(
@@ -596,7 +630,7 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         name="export_query_result",
         input_model=ExportQueryResultInput,
         output_model=ExportArtifactOutput,
-        common_errors=COMMON_ARTIFACT_ERRORS,
+        common_errors=COMMON_EXPORT_ERRORS,
         notes=["Use the query_result_id returned by query_datasource or get_view_data."],
         examples=[
             ToolExample(

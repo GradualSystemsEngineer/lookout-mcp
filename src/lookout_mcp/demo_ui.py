@@ -204,8 +204,10 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
                 _config=self.server.config,
             )
         if action == "render":
+            filter_overrides = body.get("filter_overrides") or []
             return api.render_view_image(
                 view=view,
+                filter_overrides=filter_overrides,
                 width=int(body.get("width") or 960),
                 height=int(body.get("height") or 540),
                 _config=self.server.config,

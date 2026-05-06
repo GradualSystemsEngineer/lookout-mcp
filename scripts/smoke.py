@@ -125,7 +125,12 @@ def main() -> None:
 
     render = _assert_ok(
         "render_view_image",
-        api.render_view_image(view="Q1 Revenue by Region", width=640, height=360),
+        api.render_view_image(
+            view="Q1 Revenue by Region",
+            filter_overrides={"region": "Northeast"},
+            width=640,
+            height=360,
+        ),
     )
     _assert_artifact_under_root("render_view_image", fs_root, render)
     view_export = _assert_ok(

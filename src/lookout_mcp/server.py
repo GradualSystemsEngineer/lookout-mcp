@@ -194,8 +194,18 @@ def create_mcp_server() -> Any:
         name="render_view_image",
         description=MODEL_VISIBLE_TOOL_DESCRIPTIONS["render_view_image"],
     )
-    def _render_view_image(view: str, width: int = 1200, height: int = 800) -> dict[str, Any]:
-        return api.render_view_image(view=view, width=width, height=height)
+    def _render_view_image(
+        view: str,
+        filter_overrides: dict[str, object] | list[dict[str, object]] | None = None,
+        width: int = 1200,
+        height: int = 800,
+    ) -> dict[str, Any]:
+        return api.render_view_image(
+            view=view,
+            filter_overrides=filter_overrides or {},
+            width=width,
+            height=height,
+        )
 
     @mcp.tool(
         name="render_workbook_image",

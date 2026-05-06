@@ -114,6 +114,8 @@ def test_query_tools_return_bounded_previews_and_warnings(tmp_path: Path) -> Non
     assert stale["warnings"][0]["code"] == "CACHE_STALE"
     assert view_data["returned_row_count"] == 2
     assert view_data["warnings"][0]["code"] == "CACHE_STALE"
+    assert view_data["summary_statistics"]["basis"] == "returned_preview_rows"
+    assert view_data["summary_statistics"]["numeric_fields"]
     assert view_data_override["returned_row_count"] == 2
     assert query["returned_row_count"] == 2
     assert query["truncated"] is True
@@ -218,6 +220,15 @@ def test_render_and_export_tools_create_files_under_filesystem_root(tmp_path: Pa
     render_view = _assert_ok(
         api.render_view_image(view="Q1 Revenue by Region", width=640, height=360, _config=config)
     )
+    filtered_render_view = _assert_ok(
+        api.render_view_image(
+            view="Q1 Revenue by Region",
+            filter_overrides={"region": "Northeast"},
+            width=640,
+            height=360,
+            _config=config,
+        )
+    )
     render_workbook = _assert_ok(
         api.render_workbook_image(
             workbook="Retail Sales Executive Dashboard",
@@ -247,13 +258,30 @@ def test_render_and_export_tools_create_files_under_filesystem_root(tmp_path: Pa
         api.export_view_data(view="Q1 Revenue by Region", format="json", _config=config)
     )
 
-    for artifact in (render_view, render_workbook, export_query, export_view):
+    for artifact in (render_view, filtered_render_view, render_workbook, export_query, export_view):
         artifact_path = (config.fs_root / artifact["artifact_path"]).resolve()
         assert artifact_path.relative_to(config.fs_root.resolve())
         assert artifact_path.is_file()
 
     assert render_view["status"] == "ready"
+    assert filtered_render_view["render_id"] != render_view["render_id"]
     assert render_workbook["status"] == "ready"
     assert export_query["status"] == "ready"
+    export_query_path = config.fs_root / export_query["artifact_path"]
+    assert export_query_path.read_text(encoding="utf-8").splitlines()[0] == "region,sum_revenue"
     assert repeat_query["query_result_id"] == query["query_result_id"]
     assert export_view["format"] == "json"
+
+
+@pytest.mark.integration
+def test_render_view_filter_overrides_are_validated(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    result = api.render_view_image(
+        view="Q1 Revenue by Region",
+        filter_overrides={"revenu": "Northeast"},
+        _config=config,
+    )
+
+    assert result["error"]["code"] == "FIELD_NOT_FOUND"
+    assert result["error"]["details"]["suggestions"]

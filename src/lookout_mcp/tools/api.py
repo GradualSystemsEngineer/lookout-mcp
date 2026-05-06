@@ -438,6 +438,22 @@ def _filter_payload_to_list(
     return [dict(item) for item in filters]
 
 
+def _validate_filter_overrides(
+    fields: Sequence[Mapping[str, Any]],
+    filters: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    override_filters = _filter_payload_to_list(filters)
+    if override_filters:
+        _validate_query_spec(
+            StructuredQuerySpec(
+                filters=[QueryFilter.model_validate(item) for item in override_filters]
+            ),
+            fields,
+            allow_virtual_filters=False,
+        )
+    return override_filters
+
+
 def _filter_values(query_filter: QueryFilter) -> list[Any]:
     if query_filter.values is not None:
         return list(query_filter.values)
@@ -821,6 +837,43 @@ def _warnings_dicts(status: str) -> list[dict[str, Any]]:
     return [warning.model_dump() for warning in warning_for_datasource_status(status)]
 
 
+def _preview_summary_statistics(rows: Sequence[Mapping[str, Any]]) -> dict[str, object]:
+    numeric_fields: dict[str, dict[str, object]] = {}
+    for row in rows:
+        for key, value in row.items():
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                continue
+            field_values = numeric_fields.setdefault(key, {"values": []})
+            values = field_values["values"]
+            if isinstance(values, list):
+                values.append(float(value))
+
+    summarized: dict[str, dict[str, object]] = {}
+    for key, payload in numeric_fields.items():
+        values = payload.get("values")
+        if not isinstance(values, list) or not values:
+            continue
+        first = values[0]
+        last = values[-1]
+        delta = last - first
+        summarized[key] = {
+            "min": min(values),
+            "max": max(values),
+            "avg": round(sum(values) / len(values), 4),
+            "trend": {
+                "first": first,
+                "last": last,
+                "delta": delta,
+                "direction": "up" if delta > 0 else "down" if delta < 0 else "flat",
+            },
+        }
+
+    return {
+        "basis": "returned_preview_rows",
+        "numeric_fields": summarized,
+    }
+
+
 def _run_tool(
     input_model: type[StrictModel],
     payload: Mapping[str, Any],
@@ -916,7 +969,11 @@ def _write_export_file(
         path.write_text(json.dumps(list(rows), sort_keys=True, indent=2), encoding="utf-8")
         return
 
-    fieldnames = sorted({key for row in rows for key in row})
+    fieldnames: list[str] = []
+    for row in rows:
+        for key in row:
+            if key not in fieldnames:
+                fieldnames.append(str(key))
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
@@ -1283,7 +1340,8 @@ def _get_view_data(input_data: GetViewDataInput, config: LookoutConfig) -> dict[
     with _EXPENSIVE_GUARD.run("query"), connect(config.db_path) as connection:
         view = _resolve_view(connection, input_data.view)
         datasource = _resolve_datasource(connection, str(view["datasource_id"]))
-        filter_overrides = _filter_payload_to_list(input_data.filter_overrides)
+        fields = _fields_for_datasource(connection, str(datasource["id"]))
+        filter_overrides = _validate_filter_overrides(fields, input_data.filter_overrides)
         warnings = warning_for_datasource_status(str(datasource["status"]))
         if not filter_overrides:
             rows = connection.execute(
@@ -1307,6 +1365,7 @@ def _get_view_data(input_data: GetViewDataInput, config: LookoutConfig) -> dict[
                 warnings=warnings,
             ).model_dump()
             preview["query_result_id"] = query_result["id"]
+            preview["summary_statistics"] = _preview_summary_statistics(preview["rows"])
             return preview
         if datasource["status"] == "source_offline":
             raise WorkflowError(
@@ -1314,7 +1373,6 @@ def _get_view_data(input_data: GetViewDataInput, config: LookoutConfig) -> dict[
                 "Datasource source is offline and no cached query result exists for this view.",
                 {"datasource_id": datasource["id"], "view_id": view["id"]},
             )
-        fields = _fields_for_datasource(connection, str(datasource["id"]))
         query_spec = dict(view["query_spec"])
         if filter_overrides:
             query_spec["filters"] = [
@@ -1344,6 +1402,7 @@ def _get_view_data(input_data: GetViewDataInput, config: LookoutConfig) -> dict[
             warnings=warnings,
         ).model_dump()
         preview["query_result_id"] = query_result_id
+        preview["summary_statistics"] = _preview_summary_statistics(preview["rows"])
         return preview
 
 
@@ -1489,6 +1548,7 @@ def _render_view_image(input_data: RenderViewImageInput, config: LookoutConfig) 
         config,
         target_type="view",
         target_value=input_data.view,
+        filter_overrides=input_data.filter_overrides,
         width=input_data.width,
         height=input_data.height,
     )
@@ -1511,6 +1571,7 @@ def _render_workbook_image(
         config,
         target_type="workbook",
         target_value=input_data.workbook,
+        filter_overrides=None,
         width=input_data.width,
         height=input_data.height,
     )
@@ -1521,6 +1582,7 @@ def _render_artifact(
     *,
     target_type: Literal["view", "workbook"],
     target_value: str,
+    filter_overrides: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None,
     width: int,
     height: int,
 ) -> dict[str, Any]:
@@ -1538,6 +1600,9 @@ def _render_artifact(
                 title = str(target["title"])
                 chart_type = str(target["chart_type"])
                 warnings = warning_for_datasource_status(str(target["datasource_status"]))
+                datasource = _resolve_datasource(connection, str(target["datasource_id"]))
+                fields = _fields_for_datasource(connection, str(datasource["id"]))
+                render_filters = _validate_filter_overrides(fields, filter_overrides)
                 workbook_id: str | None = None
                 view_id: str | None = target_id
             else:
@@ -1553,17 +1618,26 @@ def _render_artifact(
                     for status in sorted({str(view["datasource_status"]) for view in view_rows})
                     for warning in warning_for_datasource_status(status)
                 ]
+                render_filters = []
                 workbook_id = target_id
                 view_id = None
 
             render_id = deterministic_id(
                 "rnd",
-                f"render:{target_type}:{target_id}:{width}:{height}",
+                (
+                    f"render:{target_type}:{target_id}:{width}:{height}:"
+                    f"{json.dumps(render_filters, sort_keys=True, default=str)}"
+                ),
             )
             artifact_path = f"renders/{render_id}.svg"
             target_path = _safe_artifact_path(config.fs_root, artifact_path)
             target_path.parent.mkdir(parents=True, exist_ok=True)
             escaped_title = html.escape(title)
+            filter_label = (
+                f"Filters applied: {len(render_filters)}"
+                if render_filters
+                else "No render-time filters"
+            )
             target_path.write_text(
                 "\n".join(
                     [
@@ -1580,6 +1654,10 @@ def _render_artifact(
                         (
                             '<text x="32" y="88" font-size="16" fill="#475569">'
                             f"Lookout deterministic {target_type} render</text>"
+                        ),
+                        (
+                            '<text x="32" y="116" font-size="14" fill="#64748b">'
+                            f"{html.escape(filter_label)}</text>"
                         ),
                         "</svg>",
                     ]
@@ -1604,7 +1682,14 @@ def _render_artifact(
                     width,
                     height,
                     json.dumps([warning.code for warning in warnings], sort_keys=True),
-                    json.dumps({"target_type": target_type, "title": title}, sort_keys=True),
+                    json.dumps(
+                        {
+                            "target_type": target_type,
+                            "title": title,
+                            "filter_overrides": render_filters,
+                        },
+                        sort_keys=True,
+                    ),
                     TOOL_TIMESTAMP,
                 ),
             )

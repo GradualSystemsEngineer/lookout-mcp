@@ -3,6 +3,8 @@
 Lookout is an offline mock MCP server for a Tableau-inspired internal BI platform. AI agents use
 its local MCP tools to discover BI content, inspect datasources and dashboards, run bounded
 analysis queries, compare periods, render SVG chart artifacts, and export larger result sets.
+View data previews include compact summary statistics, and view renders support validated
+filter overrides for one-off filtered artifacts.
 
 The primary take-home deliverable is [docs/technical-spec.md](/Users/aaronmcdaniel/Code/lookout-mcp/docs/technical-spec.md).
 The Python package is a reference implementation that proves the specification, stays fully local,
@@ -158,6 +160,8 @@ agent usage:
 - List responses return compact items, not verbose records.
 - Query tools return bounded previews and require exports for larger result access.
 - Export and render tools return local artifact metadata rather than inline file contents.
+- `render_view_image` accepts validated `filter_overrides` for filtered image artifacts without
+  mutating the saved view.
 - Structured logs omit preview rows and exported data.
 
 ## Errors, Retries, and Rate Limits
